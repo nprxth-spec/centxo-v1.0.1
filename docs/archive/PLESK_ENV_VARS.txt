@@ -1,0 +1,19 @@
+# Production Environment Variables for Plesk
+# Copy these to Plesk Node.js Environment Variables UI
+
+NODE_ENV=production
+NEXTAUTH_URL=https://www.centxo.com
+
+# Database
+DATABASE_URL=mysql://sacom_centxo:YOUR_PASSWORD@103.80.48.25:3306/centxo
+
+# NextAuth
+NEXTAUTH_SECRET=YOUR_SECRET_HERE
+
+# Google OAuth
+GOOGLE_CLIENT_ID=787991868558-uqks5m53bdp4mbnrbl8itrdli9rmls57.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_SECRET
+
+# Facebook OAuth
+FACEBOOK_CLIENT_ID=YOUR_FACEBOOK_APP_ID
+FACEBOOK_CLIENT_SECRET=YOUR_FACEBOOK_SECRET

@@ -1,0 +1,166 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 30% 96%;
+    /* Soft cool gray/slate background */
+    --foreground: 230 25% 15%;
+    /* Deep slate text */
+
+    --card: 0 0% 100%;
+    --card-foreground: 224 71.4% 4.1%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71.4% 4.1%;
+
+    /* Deep Blue Primary */
+    --primary: 215 75% 50%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 220 20% 92%;
+    --secondary-foreground: 230 25% 15%;
+
+    --muted: 220 20% 92%;
+    --muted-foreground: 220 10% 45%;
+
+    --accent: 215 75% 92%;
+    /* Light blue accent */
+    --accent-foreground: 215 75% 45%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 15% 90%;
+    --input: 220 15% 90%;
+    --ring: 215 75% 50%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    /* #09090b */
+    --foreground: 0 0% 98%;
+
+    --card: 240 5.9% 10%;
+    /* #18181b */
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 5.9% 10%;
+    /* #18181b */
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/70 dark:bg-black/40 backdrop-blur-lg border border-white/20 dark:border-white/10 shadow-sm;
+  }
+
+  .glass-card {
+    @apply bg-white/95 dark:bg-card/95 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-sm rounded-xl;
+  }
+
+  /* Minimal Scrollbar - Hide arrows, faint thumb */
+  .scrollbar-minimal::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-minimal::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-minimal::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  .scrollbar-minimal::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.1);
+    /* Faint */
+    border-radius: 10px;
+  }
+
+  .dark .scrollbar-minimal::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .scrollbar-minimal:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    /* Darker on hover */
+  }
+
+  .dark .scrollbar-minimal:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Table scrollbar: same as minimal + gutter so vertical bar sits inside header */
+  .scrollbar-minimal-table {
+    scrollbar-gutter: stable;
+  }
+  .scrollbar-minimal-table::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-minimal-table::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-minimal-table::-webkit-scrollbar-button {
+    display: none;
+  }
+  .scrollbar-minimal-table::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
+  }
+  .dark .scrollbar-minimal-table::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+  .scrollbar-minimal-table:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+  }
+  .dark .scrollbar-minimal-table:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground transition-colors font-sans;
+    font-family: var(--font-sarabun), var(--font-roboto), sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-sarabun), var(--font-roboto), sans-serif;
+    @apply tracking-tight;
+  }
+}

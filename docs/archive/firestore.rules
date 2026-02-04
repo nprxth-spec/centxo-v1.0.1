@@ -1,0 +1,139 @@
+/**
+ * Core Philosophy: This ruleset enforces a strict user-ownership model combined with
+ * publicly accessible legal documents. The primary security goal is to ensure that
+ * users can only access and manage their own data, while global content like privacy
+ * policies is read-only for clients.
+ *
+ * Data Structure: The data is organized into a top-level `/users` collection, where
+ * each user's document (`/users/{userId}`) serves as the root for their private data,
+ * such as campaigns, ads, and deletion requests. This path-based ownership is simple and performant.
+ * Publicly readable content, like `/privacy_policies` and `/terms_of_service`, is
+ * stored in separate top-level collections.
+ *
+ * Key Security Decisions:
+ * - User Privacy: Listing the top-level `/users` collection is explicitly disallowed
+ *   to prevent enumeration of all users in the application.
+ * - User Data Isolation: A user can only access documents within their own data tree
+ *   (i.e., under `/users/{userId}`).
+ * - Read-Only Global Content: Legal documents are publicly readable by anyone but
+ *   cannot be modified by any client-side request. This assumes they are managed by a
+ *   trusted backend environment (e.g., using the Admin SDK).
+ * - Relational Integrity: On document creation, rules enforce that internal ID fields
+ *   (e.g., a `userId` field within a document) must match the corresponding ID in the
+ *   document's path. This creates a durable and verifiable link to the parent resource.
+ *
+ * Denormalization for Authorization: This ruleset relies on path-based security. The
+ * `userId` in the path `/users/{userId}` is the sole source of truth for ownership
+ * decisions, eliminating the need for slow and costly `get()` calls to other documents.
+ *
+ * Structural Segregation: Private user data (`/users/{userId}/...`) is structurally
+ * separated from public data (`/privacy_policies`, `/terms_of_service`), which simplifies
+ * rules for list operations and enhances security by preventing accidental data exposure.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    //-------------------------------------------------------------------------
+    // Helper Functions
+    //-------------------------------------------------------------------------
+
+    /**
+     * isSignedIn
+     * Checks if the user is authenticated.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * isOwner
+     * Validates if the currently authenticated user's UID matches the provided userId.
+     * This is the foundation of the user-ownership security model.
+     * @param userId The user ID to check against the authenticated user.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    /**
+     * isNewOwner
+     * For create operations. Enforces that the user is the owner and that the `userId` field
+     * inside the new document matches the owner's UID.
+     */
+    function isNewOwner(userId) {
+      return isOwner(userId) && request.resource.data.userId == userId;
+    }
+
+
+    //-------------------------------------------------------------------------
+    // User-Owned Data Rules
+    //-------------------------------------------------------------------------
+    match /users/{userId} {
+      // Users can get, update, and delete their own profile.
+      allow get, update, delete: if isOwner(userId);
+      // New users can create their own profile document.
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      // No one can list all users.
+      allow list: if false;
+
+      // CAMPAIGNS: A user can manage their own campaigns.
+      match /campaigns/{campaignId} {
+        allow get, list, delete, update: if isOwner(userId);
+        allow create: if isNewOwner(userId);
+
+        // ADSETS: A user can manage ad sets within their own campaigns.
+        match /adsets/{adsetId} {
+          allow get, list, delete, update: if isOwner(userId);
+          allow create: if isNewOwner(userId);
+
+          // ADS: A user can manage ads within their own ad sets.
+          match /ads/{adId} {
+            allow get, list, delete, update: if isOwner(userId);
+            allow create: if isNewOwner(userId);
+          }
+        }
+      }
+      
+      // DECISION LOGS: Users can manage their own decision logs.
+      match /decision_logs/{logId} {
+        allow get, list, delete, update: if isOwner(userId);
+        allow create: if isNewOwner(userId);
+      }
+
+      // DELETION REQUESTS: Users can manage their own account deletion requests.
+      match /deletion_requests/{deletionRequestId} {
+        allow get, list, create, update, delete: if isOwner(userId);
+      }
+    }
+
+
+    //-------------------------------------------------------------------------
+    // Public Document Rules
+    //-------------------------------------------------------------------------
+
+    /**
+     * @description Manages access to the application's privacy policies.
+     * @path /privacy_policies/{privacyPolicyId}
+     * @allow (get, list) Any user, including unauthenticated visitors, reading the policies.
+     * @deny (create, update, delete) Any client attempting to modify the policies.
+     * @principle Provides public read access for global content while securing writes for admin-only management.
+     */
+    match /privacy_policies/{privacyPolicyId} {
+      allow get, list: if true;
+      allow create, update, delete: if false; // Managed by backend/admin only
+    }
+
+    /**
+     * @description Manages access to the application's terms of service.
+     * @path /terms_of_service/{termsOfServiceId}
+     * @allow (get, list) Any user, including unauthenticated visitors, reading the terms.
+     * @deny (create, update, delete) Any client attempting to modify the terms.
+     * @principle Provides public read access for global content while securing writes for admin-only management.
+     */
+    match /terms_of_service/{termsOfServiceId} {
+      allow get, list: if true;
+      allow create, update, delete: if false; // Managed by backend/admin only
+    }
+  }
+}
