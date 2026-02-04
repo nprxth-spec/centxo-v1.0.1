@@ -7,7 +7,7 @@
     "dev:watch": "nodemon",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
-    "build": "prisma generate && prisma db push --accept-data-loss && cross-env NODE_ENV=production next build",
+    "build": "prisma generate && cross-env NODE_ENV=production next build",
     "start": "node server.js",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
