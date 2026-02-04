@@ -36,7 +36,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAdAccount } from '@/contexts/AdAccountContext';
-import { formatCurrencyByCode, getCurrencySymbol } from '@/lib/currency-utils';
+import { formatCurrencyByCode, getCurrencySymbol, fromBasicUnits } from '@/lib/currency-utils';
 
 interface AdAccount {
     id: string;
@@ -244,7 +244,7 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
     };
 
     // Fetch accounts from Facebook API
-    const fetchAccounts = async () => {
+    const fetchAccounts = async (forceRefresh = false) => {
         if (!session?.user || selectedAccounts.length === 0) {
             return;
         }
@@ -252,7 +252,7 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
         setIsLoadingAccounts(true);
         setLoading(true);
         try {
-            const response = await fetch('/api/team/ad-accounts' + (refreshTrigger > 0 ? '?refresh=true' : ''));
+            const response = await fetch('/api/team/ad-accounts' + ((refreshTrigger > 0 || forceRefresh) ? '?refresh=true' : ''));
 
             if (response.ok) {
                 const data = await response.json();
@@ -262,7 +262,17 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
 
                 // Map Facebook accounts with selected accounts
                 const enrichedAccounts = selectedAccounts.map(acc => {
-                    const fbAccount = fbAccounts.find((fb: any) => fb.account_id === acc.account_id);
+                    const fbAccount = fbAccounts.find((fb: any) => {
+                        const fbId = String(fb.account_id || '').replace(/^act_/, '');
+                        const accId = String(acc.account_id || '').replace(/^act_/, '');
+                        return fbId === accId || fb.account_id === acc.account_id;
+                    });
+                    const currency = fbAccount?.currency || acc.currency || 'USD';
+                    const rawSpendCap = fbAccount?.spend_cap ?? acc.spend_cap;
+                    const rawSpentAmount = fbAccount?.amount_spent ?? acc.amount_spent;
+                    // Facebook API returns in basic units (cents/satang). Always convert for display.
+                    const spendingCap = rawSpendCap != null ? fromBasicUnits(rawSpendCap, currency) : null;
+                    const spentAmount = rawSpentAmount != null ? fromBasicUnits(rawSpentAmount, currency) : null;
 
                     return {
                         id: acc.id,
@@ -273,8 +283,8 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
                         status: fbAccount?.account_status ?? 'UNKNOWN',
                         disable_reason: fbAccount?.disable_reason,
                         activeAds: fbAccount?.ads?.summary?.total_count || 0,
-                        spendingCap: fbAccount?.spend_cap || null,
-                        spentAmount: fbAccount?.amount_spent || null,
+                        spendingCap,
+                        spentAmount,
                         timeZone: fbAccount?.timezone_name || '-',
                         timeZoneOffset: fbAccount?.timezone_offset_hours_utc ?? fbAccount?.timezone_offset,
                         nationality: fbAccount?.business_country_code || '-',
@@ -366,8 +376,8 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
                 throw new Error(result.error || 'Failed to update spending limit');
             }
 
-            // Refresh accounts
-            await fetchAccounts();
+            // Refresh accounts with force refresh to get updated data
+            await fetchAccounts(true);
             alert(action === 'reset'
                 ? t('accounts.spendingLimit.success.reset', 'Limit reset successfully!')
                 : t('accounts.spendingLimit.success.delete', 'Limit deleted successfully!')
@@ -407,7 +417,8 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
             }
 
             setSpendingLimitDialogOpen(false);
-            await fetchAccounts();
+            // Force refresh from Facebook API to get updated spending limit
+            await fetchAccounts(true);
 
             const message = spendingLimitAction === 'reset'
                 ? `รีเซ็ตวงเงินสำหรับ ${selectedAccountForLimit.name} แล้ว`

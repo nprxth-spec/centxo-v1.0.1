@@ -18,6 +18,7 @@ import {
     Sparkles,
     Zap,
     FileSpreadsheet,
+    CreditCard,
 } from 'lucide-react';
 import {
     AlertDialog,
@@ -99,8 +100,8 @@ const navStructure: NavGroup[] = [
                 translationKey: 'nav.settings',
                 children: [
                     { name: "Account", href: "/settings/account", icon: User, iconClass: "text-sky-500", translationKey: 'settings.account', isChild: true },
+                    { name: "Billing", href: "/settings/billing", icon: CreditCard, iconClass: "text-amber-500", translationKey: 'settings.billing', isChild: true },
                     { name: "Connections", href: "/settings/connections", icon: Link2, iconClass: "text-blue-500", translationKey: 'settings.connections', isChild: true },
-                    { name: "Appearance", href: "/settings/appearance", icon: Palette, iconClass: "text-violet-500", translationKey: 'settings.appearance', isChild: true },
                 ]
             },
         ]
@@ -172,13 +173,13 @@ export default function AppSidebar({ isCollapsed, toggleSidebar, onMobileClose, 
 
             {/* Navigation */}
             <div className={cn(
-                "flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-6",
+                "flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-2",
                 isCollapsed ? "px-0" : "px-3"
             )}>
                 {navStructure.map((group, groupIndex) => (
                     <div key={groupIndex} className={cn(
-                        "space-y-1",
-                        groupIndex > 0 && "pt-6 border-t border-border/30"
+                        "space-y-0.5",
+                        groupIndex > 0 && "pt-2 border-t border-border/30"
                     )}>
                         {/* Group Label */}
                         {!isCollapsed && group.label && (
@@ -202,17 +203,17 @@ export default function AppSidebar({ isCollapsed, toggleSidebar, onMobileClose, 
                                             <button
                                                 onClick={() => toggleGroup(item.name)}
                                                 className={cn(
-                                                    "w-full flex items-center justify-between py-3 px-4 text-sm font-medium rounded-xl transition-all group select-none",
+                                                    "w-full flex items-center justify-between py-2 px-3 text-sm font-medium rounded-lg transition-all group select-none",
                                                     isAnyChildActive ? "bg-secondary text-foreground shadow-md border border-white/5" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-                                                    isCollapsed && "justify-center px-0 py-3 mx-auto w-10/12"
+                                                    isCollapsed && "justify-center px-0 py-2 mx-auto w-10/12"
                                                 )}
                                                 title={isCollapsed ? item.name : undefined}
                                             >
                                                 <div className={cn(
                                                     "flex items-center",
-                                                    isCollapsed ? "justify-center gap-1" : "gap-4"
+                                                    isCollapsed ? "justify-center gap-1" : "gap-3"
                                                 )}>
-                                                    <item.icon className={cn("h-5 w-5 shrink-0", item.iconClass ?? (isAnyChildActive ? "text-primary" : "text-muted-foreground"))} />
+                                                    <item.icon className={cn("size-4 shrink-0", isAnyChildActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
                                                     {!isCollapsed && <span className="whitespace-nowrap">{t(item.translationKey, item.name)}</span>}
                                                     {isCollapsed && (
                                                         <ChevronRight className={cn(
@@ -242,13 +243,13 @@ export default function AppSidebar({ isCollapsed, toggleSidebar, onMobileClose, 
                                                                     onClick={onMobileClose}
                                                                     title={t(child.translationKey, child.name)}
                                                                     className={cn(
-                                                                        "flex items-center justify-center py-2 px-0 mx-auto w-10/12 rounded-lg transition-colors",
+                                                                        "flex items-center justify-center py-1.5 px-0 mx-auto w-10/12 rounded-lg transition-colors",
                                                                         isActive
                                                                             ? "text-primary bg-secondary"
                                                                             : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                                                                     )}
                                                                 >
-                                                                    {child.icon && <child.icon className={cn("h-4 w-4 shrink-0", child.iconClass ?? "text-muted-foreground")} />}
+                                                                    {child.icon && <child.icon className={cn("size-3.5 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />}
                                                                 </Link>
                                                             )
                                                         })}
@@ -263,13 +264,13 @@ export default function AppSidebar({ isCollapsed, toggleSidebar, onMobileClose, 
                                                                     href={child.href}
                                                                     onClick={onMobileClose}
                                                                     className={cn(
-                                                                        "flex items-center gap-3 py-1.5 px-3 text-sm rounded-md transition-colors whitespace-nowrap",
+                                                                        "flex items-center gap-3 py-1.5 px-3 text-sm rounded-md transition-colors whitespace-nowrap group",
                                                                         isActive
                                                                             ? "text-primary font-medium"
                                                                             : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
                                                                     )}
                                                                 >
-                                                                    {child.icon && <child.icon className={cn("h-4 w-4 shrink-0", child.iconClass ?? "text-muted-foreground")} />}
+                                                                    {child.icon && <child.icon className={cn("size-3.5 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />}
                                                                     <span>{t(child.translationKey, child.name)}</span>
                                                                 </Link>
                                                             )
@@ -291,19 +292,19 @@ export default function AppSidebar({ isCollapsed, toggleSidebar, onMobileClose, 
                                         href={item.href}
                                         onClick={onMobileClose}
                                         className={cn(
-                                            "flex items-center py-3 px-4 text-sm font-medium rounded-xl transition-all group relative",
+                                            "flex items-center py-2 px-3 text-sm font-medium rounded-lg transition-all group relative",
                                             isActive
                                                 ? "bg-secondary text-foreground shadow-md border border-white/5"
                                                 : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-                                            isCollapsed && "justify-center px-0 py-3 mx-auto w-10/12"
+                                            isCollapsed && "justify-center px-0 py-2 mx-auto w-10/12"
                                         )}
                                         title={isCollapsed ? item.name : undefined}
                                     >
                                         <div className={cn(
                                             "flex items-center",
-                                            isCollapsed ? "justify-center" : "gap-4"
+                                            isCollapsed ? "justify-center" : "gap-3"
                                         )}>
-                                            <item.icon className={cn("h-5 w-5 shrink-0", item.iconClass ?? (isActive ? "text-primary" : "text-muted-foreground"))} />
+                                            <item.icon className={cn("size-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
                                             {!isCollapsed && <span className="whitespace-nowrap">{t(item.translationKey ?? item.name, item.name)}</span>}
                                         </div>
                                     </Link>

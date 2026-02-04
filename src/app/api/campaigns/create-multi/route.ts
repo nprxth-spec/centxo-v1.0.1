@@ -224,11 +224,12 @@ export async function POST(request: NextRequest) {
     console.log(`Using user budget: ${dailyBudgetFloat} ${currency} = ${dailyBudget} (smallest unit)`);
 
     // Create ONE campaign
-    const campaignPayload = {
+    const campaignPayload: Record<string, unknown> = {
       name: `Campaign - ${aiAnalysis.productCategory} - ${new Date().toLocaleDateString('th-TH')} - Multi Media`,
       objective: campaignObjective,
       status: 'ACTIVE',
-      special_ad_categories: [],
+      special_ad_categories: ['NONE'],
+      is_adset_budget_sharing_enabled: false,
       access_token: accessToken,
     };
 

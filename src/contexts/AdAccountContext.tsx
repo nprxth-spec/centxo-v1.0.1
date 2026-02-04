@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
@@ -248,6 +248,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     return 0;
   });
 
+  const stateRef = useRef({ adAccounts, pages, businesses, businessPages, businessAccounts, lastFetched, isRateLimited, selectedAccounts, selectedPages });
+  stateRef.current = { adAccounts, pages, businesses, businessPages, businessAccounts, lastFetched, isRateLimited, selectedAccounts, selectedPages };
+
   // Start with loading=false if we have cached data (stale-while-revalidate = show fast)
   const hasCachedData = () => {
     if (typeof window === 'undefined') return false;
@@ -304,19 +307,20 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
   // Fetch config - single API call (accounts + pages + businesses) - reduces Meta API calls by ~50%
   const fetchConfig = async (force: boolean = false) => {
-    if (isRateLimited) {
-      if (adAccounts.length > 0 || pages.length > 0 || businesses.length > 0) {
-        return { accounts: adAccounts, pages, businesses, businessPages, businessAccounts };
+    const { adAccounts: accs, pages: pgs, businesses: biz, businessPages: bpFb, businessAccounts: baFb, selectedAccounts: selAcc, selectedPages: selPg, isRateLimited: rateLtd } = stateRef.current;
+    if (rateLtd) {
+      if (accs.length > 0 || pgs.length > 0 || biz.length > 0) {
+        return { accounts: accs, pages: pgs, businesses: biz, businessPages: bpFb, businessAccounts: baFb };
       }
       throw new Error("System is cooling down from API rate limits. Please try again in 15 minutes.");
     }
     const url = force ? '/api/team/config?refresh=true' : '/api/team/config';
     const res = await fetch(url, force ? { cache: 'no-store' } : undefined);
     if (!res.ok) {
-      const hasData = adAccounts.length > 0 || pages.length > 0 || businesses.length > 0;
+      const hasData = accs.length > 0 || pgs.length > 0 || biz.length > 0;
       if (hasData) {
         try { await handleApiError(res); } catch (e) { console.warn(e); }
-        return { accounts: adAccounts, pages, businesses, businessPages, businessAccounts };
+        return { accounts: accs, pages: pgs, businesses: biz, businessPages: bpFb, businessAccounts: baFb };
       }
       await handleApiError(res);
     }
@@ -333,35 +337,36 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     setBusinessPages(bp);
     setBusinessAccounts(ba);
 
-    const validSelectedAccounts = selectedAccounts.filter((s) =>
+    const validSelectedAccounts = selAcc.filter((s) =>
       accounts.some((acc: AdAccount) => acc.id === s.id)
     );
     const hasSavedSelection =
       typeof window !== 'undefined' && localStorage.getItem('selectedAdAccounts') !== null;
     if (validSelectedAccounts.length === 0 && accounts.length > 0 && !hasSavedSelection) {
       setSelectedAccounts(accounts);
-    } else if (validSelectedAccounts.length !== selectedAccounts.length) {
+    } else if (validSelectedAccounts.length !== selAcc.length) {
       setSelectedAccounts(validSelectedAccounts);
     }
 
-    const validSelectedPages = selectedPages.filter((s) =>
+    const validSelectedPages = selPg.filter((s) =>
       p.some((page: Page) => page.id === s.id)
     );
     const hasSavedPages =
       typeof window !== 'undefined' && localStorage.getItem('selectedPages') !== null;
     if (validSelectedPages.length === 0 && p.length > 0 && !hasSavedPages) {
       setSelectedPages(p);
-    } else if (validSelectedPages.length !== selectedPages.length) {
+    } else if (validSelectedPages.length !== selPg.length) {
       setSelectedPages(validSelectedPages);
     }
 
     return { accounts, pages: p, businesses: b, businessPages: bp, businessAccounts: ba };
   };
 
-  // Refresh - single API call instead of 3 (reduces Meta rate limit usage)
-  const refreshData = async (force: boolean = false, options?: { bypassCooldown?: boolean }) => {
-    if (isRateLimited) {
-      if (adAccounts.length > 0 || pages.length > 0 || businesses.length > 0) {
+  // Refresh - stable reference to prevent useEffect loops in child components
+  const refreshData = useCallback(async (force: boolean = false, options?: { bypassCooldown?: boolean }) => {
+    const { adAccounts: accs, pages: pgs, businesses: biz, lastFetched: lf, isRateLimited: rateLtd } = stateRef.current;
+    if (rateLtd) {
+      if (accs.length > 0 || pgs.length > 0 || biz.length > 0) {
         setLoading(false);
         return;
       }
@@ -371,14 +376,12 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     }
 
     const now = Date.now();
-    // Manual Refresh cooldown: if user clicked Refresh within 5 min, use cache (don't force API call) - refresh works normally but data comes from cache
     const useCacheDueToCooldown = force && !options?.bypassCooldown && lastManualRefreshRef.current > 0 && (now - lastManualRefreshRef.current < REFRESH_COOLDOWN);
     if (force && !useCacheDueToCooldown) lastManualRefreshRef.current = now;
 
-    const hasDataToShow = adAccounts.length > 0 || pages.length > 0 || businesses.length > 0;
-    // When we have no data, always refetch (don't trust stale empty cache)
+    const hasDataToShow = accs.length > 0 || pgs.length > 0 || biz.length > 0;
     const skipCache = !hasDataToShow;
-    if (!force && !skipCache && lastFetched > 0 && (now - lastFetched < CACHE_DURATION)) {
+    if (!force && !skipCache && lf > 0 && (now - lf < CACHE_DURATION)) {
       setLoading(false);
       return;
     }
@@ -390,18 +393,19 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     try {
       const result = await fetchConfig(useCacheDueToCooldown ? false : force);
       const { accounts, pages: p, businesses: b, businessPages: bp, businessAccounts: ba } = result;
-
+      const current = stateRef.current;
       setLastFetched(Date.now());
-      saveToCache(accounts || adAccounts, p || pages, b || businesses, bp || businessPages, ba || businessAccounts, Date.now());
+      saveToCache(accounts || current.adAccounts, p || current.pages, b || current.businesses, bp || [], ba || [], Date.now());
     } catch (err) {
       console.error("Error refreshing data:", err);
-      if (adAccounts.length === 0 && pages.length === 0 && businesses.length === 0) {
+      const curr = stateRef.current;
+      if (curr.adAccounts.length === 0 && curr.pages.length === 0 && curr.businesses.length === 0) {
         setError(err instanceof Error ? err.message : "Failed to refresh data");
       }
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // Initial load - use cache when valid (localStorage + server in-memory). User can click Refresh for fresh data.
   useEffect(() => {

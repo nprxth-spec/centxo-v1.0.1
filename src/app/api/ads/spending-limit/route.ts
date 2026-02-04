@@ -8,7 +8,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { z } from 'zod';
 import { decryptToken } from '@/lib/services/metaClient';
-import { toBasicUnits, fromBasicUnits } from '@/lib/currency-utils';
+import { fromBasicUnits } from '@/lib/currency-utils';
 import { prisma } from '@/lib/prisma';
 
 // Input validation schema
@@ -98,10 +98,11 @@ export async function POST(request: NextRequest) {
                 if (!newLimit || parseFloat(newLimit) <= 0) {
                     return NextResponse.json({ error: 'Invalid spending limit' }, { status: 400 });
                 }
-                // Convert to basic units based on currency (cents for USD, yen for JPY, etc.)
-                const limitInBasicUnits = toBasicUnits(newLimit, currency);
-                updateParams.spend_cap = limitInBasicUnits.toString();
-                console.log('[spending-limit] Converting', newLimit, currency, 'to', limitInBasicUnits, 'basic units');
+                // Meta UPDATE spend_cap expects standard denomination (e.g. 23.50 for $23.50), NOT basic units.
+                // See: https://developers.facebook.com/docs/marketing-api/reference/ad-account/
+                const limitValue = parseFloat(newLimit);
+                updateParams.spend_cap = limitValue.toString();
+                console.log('[spending-limit] Sending spend_cap:', limitValue, currency, '(main units)');
                 break;
 
             case 'reset':
@@ -114,13 +115,9 @@ export async function POST(request: NextRequest) {
             case 'delete':
                 // Facebook doesn't allow spend_cap = 0, it gets ignored
                 // Instead, we need to use a workaround: set a very high limit
-                // or inform user that Facebook doesn't support removing limits
                 console.log('[spending-limit] Facebook does not support removing spend_cap');
                 console.log('[spending-limit] Setting to very high limit (999999999) as workaround');
-                
-                // Convert to basic units for the currency
-                const unlimitedValue = toBasicUnits(999999999, currency);
-                updateParams.spend_cap = unlimitedValue.toString();
+                updateParams.spend_cap = '999999999';
                 break;
 
             default:

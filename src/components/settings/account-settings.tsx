@@ -2,9 +2,11 @@
 
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { User, Laptop, Trash2, Palette } from 'lucide-react';
 import { SessionManagement } from './session-management';
 import { ProfileSettings } from './profile-settings';
 import { DeleteAccountSettings } from './delete-account-settings';
+import { AppearanceSettings } from './appearance-settings';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -38,23 +40,33 @@ export function AccountSettings() {
         <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col h-full">
             {/* Tabs Header Box - Attached to Header */}
             <div className="border-b border-r border-border bg-card shadow-sm overflow-x-auto">
-                <TabsList className="flex w-full justify-start bg-transparent p-0 h-auto gap-4 md:gap-6 pt-4 pb-3 transition-all duration-200 pl-4 md:pl-[3.5rem] lg:pl-[4.5rem] min-w-max md:min-w-0">
+                <TabsList className="flex w-full justify-start bg-transparent p-0 h-auto gap-4 md:gap-6 pt-3 pb-0 transition-all duration-200 pl-4 md:pl-[3.5rem] lg:pl-[4.5rem] min-w-max md:min-w-0">
                     <TabsTrigger
                         value="account"
-                        className="rounded-none border-b-2 border-transparent bg-transparent px-0 py-3 font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
+                        className="rounded-none border-b-2 border-transparent bg-transparent px-0 pt-2.5 pb-3.5 font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none flex items-center"
                     >
+                        <User className="mr-2 h-4 w-4" />
                         {t('settings.accountSettings', 'Account Settings')}
                     </TabsTrigger>
                     <TabsTrigger
                         value="sessions"
-                        className="rounded-none border-b-2 border-transparent bg-transparent px-0 py-3 font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
+                        className="rounded-none border-b-2 border-transparent bg-transparent px-0 pt-2.5 pb-3.5 font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none flex items-center"
                     >
+                        <Laptop className="mr-2 h-4 w-4" />
                         {t('settings.sessions', 'Session Management')}
                     </TabsTrigger>
                     <TabsTrigger
-                        value="delete"
-                        className="rounded-none border-b-2 border-transparent bg-transparent px-0 py-3 font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
+                        value="appearance"
+                        className="rounded-none border-b-2 border-transparent bg-transparent px-0 pt-2.5 pb-3.5 font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none flex items-center"
                     >
+                        <Palette className="mr-2 h-4 w-4" />
+                        {t('settings.appearance', 'Appearance')}
+                    </TabsTrigger>
+                    <TabsTrigger
+                        value="delete"
+                        className="rounded-none border-b-2 border-transparent bg-transparent px-0 pt-2.5 pb-3.5 font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none flex items-center"
+                    >
+                        <Trash2 className="mr-2 h-4 w-4" />
                         {t('settings.deleteAccount', 'Delete Account')}
                     </TabsTrigger>
                 </TabsList>
@@ -77,6 +89,17 @@ export function AccountSettings() {
                             </div>
                             <div className="my-6 h-[1px] bg-border" />
                             <SessionManagement />
+                        </TabsContent>
+
+                        <TabsContent value="appearance" className="space-y-6 mt-0">
+                            <div className="space-y-0.5">
+                                <h2 className="text-2xl font-bold tracking-tight">{t('settings.appearance', 'Appearance')}</h2>
+                                <p className="text-muted-foreground">
+                                    {t('settings.appearanceDesc', 'Customize the look and feel of the application.')}
+                                </p>
+                            </div>
+                            <div className="my-6 h-[1px] bg-border" />
+                            <AppearanceSettings />
                         </TabsContent>
 
                         <TabsContent value="delete" className="space-y-6 mt-0">

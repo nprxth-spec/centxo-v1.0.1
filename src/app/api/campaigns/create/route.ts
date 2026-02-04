@@ -343,20 +343,17 @@ export async function POST(request: NextRequest) {
       for (let c = 0; c < validCampaignCount; c++) {
         if (c > 0) await sleep(getRandomDelay());
 
+        const boostCampaignBody: Record<string, unknown> = {
+          name: `Boost Post ${c + 1} - ${new Date().toLocaleDateString('th-TH')}`,
+          objective: campaignObjective,
+          status: 'ACTIVE',
+          special_ad_categories: ['NONE'],
+          is_adset_budget_sharing_enabled: false,
+          access_token: accessToken,
+        };
         const campaignRes = await fetch(
           `https://graph.facebook.com/v22.0/act_${cleanAdAccountId}/campaigns`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: `Boost Post ${c + 1} - ${new Date().toLocaleDateString('th-TH')}`,
-              objective: campaignObjective,
-              status: 'ACTIVE',
-              special_ad_categories: ['NONE'],
-              is_adset_budget_sharing_enabled: false,
-              access_token: accessToken,
-            }),
-          }
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(boostCampaignBody) }
         );
         const campaignData = await campaignRes.json();
         if (!campaignRes.ok || campaignData.error) {
@@ -1038,15 +1035,14 @@ export async function POST(request: NextRequest) {
 
       console.log(`\n--- Processing Campaign ${c + 1}/${validCampaignCount} ---`);
 
-      const campaignBody = {
+      const campaignBody: Record<string, unknown> = {
         name: `Auto Campaign ${c + 1} - ${new Date().toLocaleDateString('th-TH')}`,
         objective: campaignObjective,
-        status: 'ACTIVE' as const,
-        special_ad_categories: ['NONE'] as const,
+        status: 'ACTIVE',
+        special_ad_categories: ['NONE'],
         is_adset_budget_sharing_enabled: false,
         access_token: accessToken,
       };
-
       const campaignResponse = await fetch(
         `https://graph.facebook.com/v22.0/act_${cleanAdAccountId}/campaigns`,
         {
@@ -1062,7 +1058,7 @@ export async function POST(request: NextRequest) {
         const detail = [err.error_user_msg, err.message, err.error_user_title].filter(Boolean).join(' — ') || err.message || 'Invalid parameter';
         console.error('[campaigns/create] Campaign API error:', JSON.stringify(err));
         console.error('[campaigns/create] Request body (token redacted):', JSON.stringify({ ...campaignBody, access_token: '[REDACTED]' }));
-        throw new Error(`Facebook Campaign Error: ${detail}${err.code != null ? ` (code ${err.code})` : ''}`);
+        throw new Error(detail);
       }
 
       const campaignId = campaignData.id;

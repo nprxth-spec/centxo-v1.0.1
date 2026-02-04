@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { fromBasicUnits } from '@/lib/currency-utils';
+import { decryptToken } from '@/lib/services/metaClient';
 
 // Simple in-memory cache using globalThis to survive HMR in dev
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes - reduce Meta rate limit usage
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
         // Check Cache
         const searchParams = req.nextUrl.searchParams;
         const forceRefresh = searchParams.get('refresh') === 'true';
-        const cacheKey = `ad_accounts_v3_${user.id}`;
+        const cacheKey = `ad_accounts_v4_${user.id}`; // v4: bump to clear stale cache with raw spend values
 
         if (!forceRefresh && cache[cacheKey]) {
             const cached = cache[cacheKey];
@@ -99,6 +100,30 @@ export async function GET(req: NextRequest) {
                 console.log(`[team/ad-accounts-debug] Found ${teamMembers.length} facebook connections under host ${memberRecord.userId}`);
             } else {
                 console.log(`[team/ad-accounts-debug] No member record found for email ${session.user.email}`);
+            }
+        }
+
+        // Fallback: use MetaAccount when no TeamMembers (same as team/config)
+        if (teamMembers.length === 0) {
+            const metaAccount = await prisma.metaAccount.findUnique({
+                where: { userId: user.id },
+            });
+            if (metaAccount?.accessToken && metaAccount.accessTokenExpires && new Date(metaAccount.accessTokenExpires) > new Date()) {
+                let token: string;
+                try {
+                    token = decryptToken(metaAccount.accessToken);
+                } catch {
+                    token = metaAccount.accessToken;
+                }
+                teamMembers = [
+                    {
+                        id: metaAccount.id,
+                        accessToken: token,
+                        accessTokenExpires: metaAccount.accessTokenExpires,
+                        facebookUserId: metaAccount.metaUserId,
+                        facebookName: session.user?.name || 'Main Account',
+                    } as any,
+                ];
             }
         }
 

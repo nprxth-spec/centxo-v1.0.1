@@ -97,7 +97,10 @@ export default function CreateAdsPage() {
   const [ageMinInput, setAgeMinInput] = useState('20');
   const [ageMaxInput, setAgeMaxInput] = useState('50');
 
+  const [mounted, setMounted] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+
+  useEffect(() => setMounted(true), []);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryDeleteTarget, setLibraryDeleteTarget] = useState<{ id: string } | null>(null);
   const [libraryDeleting, setLibraryDeleting] = useState(false);
@@ -407,7 +410,7 @@ export default function CreateAdsPage() {
       if (s.includes('facebook') && s.includes('connect')) return t('createAds.error.fbConnect', 'ยังไม่ได้เชื่อมต่อ Facebook กรุณาไปที่ Settings > Connections');
       if (s.includes('beneficiary') || s.includes('dsa')) return t('createAds.error.beneficiary', 'ไม่พบผู้รับผลประโยชน์ที่รองรับ กรุณาตั้งค่าใน Meta Business Manager');
       if (s.includes('permission') || s.includes('access')) return t('createAds.error.permission', 'ไม่มีสิทธิ์เข้าถึงบัญชีหรือเพจ กรุณาตรวจสอบ Meta Ads Manager');
-      if (s.includes('invalid parameter')) return t('createAds.error.invalidParam', 'พารามิเตอร์แคมเปญไม่ถูกต้อง — ตรวจสอบ objective, Special Ad Categories หรือการตั้งค่าใน Meta Ads Manager');
+      if (s.includes('invalid parameter') && s.length < 80) return t('createAds.error.invalidParam', 'พารามิเตอร์แคมเปญไม่ถูกต้อง — ตรวจสอบ objective, Special Ad Categories หรือการตั้งค่าใน Meta Ads Manager');
       if (s.includes('โหมดพัฒนา') || s.includes('development mode')) return t('createAds.error.appDevMode', 'แอป Facebook อยู่ในโหมดพัฒนา กรุณาไปที่ Meta for Developers แล้วเปลี่ยนแอปเป็นโหมด Live (สาธารณะ) เพื่อสร้างโฆษณาได้');
       return raw;
     };
@@ -473,7 +476,7 @@ export default function CreateAdsPage() {
     setForm((prev) => ({ ...prev, manualInterests: prev.manualInterests.filter((i) => i.id !== id) }));
   };
 
-  if (accountsLoading) {
+  if (!mounted || accountsLoading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

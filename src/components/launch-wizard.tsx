@@ -16,18 +16,18 @@ import { useToast } from '@/hooks/use-toast';
 import { launchCampaign } from '@/lib/actions';
 import { useAdAccount } from '@/contexts/AdAccountContext';
 import { NoFacebookAccountsPrompt } from '@/components/NoFacebookAccountsPrompt';
-
-const launchSchema = z.object({
-  videoFile: z.any().refine((files) => files?.length === 1, 'Video is required.'),
-  adAccountId: z.string().min(1, 'Ad account is required.'),
-  pageId: z.string().min(1, 'Facebook Page is required.'),
-  adCount: z.coerce.number().min(1, 'Number of ads must be at least 1.').max(5, 'Cannot generate more than 5 ads.'),
-  beneficiaryName: z.string().min(1, 'Beneficiary name is required for Thailand ads.'),
-});
-
-type LaunchFormValues = z.infer<typeof launchSchema>;
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export default function LaunchWizard() {
+  const { t } = useLanguage();
+  const launchSchema = z.object({
+    videoFile: z.any().refine((files) => files?.length === 1, t('launch.quick.validation.video')),
+    adAccountId: z.string().min(1, t('launch.quick.validation.adAccount')),
+    pageId: z.string().min(1, t('launch.quick.validation.page')),
+    adCount: z.coerce.number().min(1, t('launch.quick.validation.adCount')).max(5, t('launch.quick.validation.adCountMax')),
+    beneficiaryName: z.string().min(1, t('launch.quick.validation.beneficiary')),
+  });
+  type LaunchFormValues = z.infer<typeof launchSchema>;
   const {
     selectedAccounts: adAccounts,
     selectedPages: pages,
@@ -76,8 +76,8 @@ export default function LaunchWizard() {
   const onSubmit = async (data: LaunchFormValues) => {
     setIsSubmitting(true);
     toast({
-      title: "🚀 Launching Campaign...",
-      description: "Your new ad campaign is being created. This may take a moment.",
+      title: `🚀 ${t('launch.quick.launching')}`,
+      description: t('launch.quick.launchDesc'),
     });
 
     try {
@@ -92,16 +92,16 @@ export default function LaunchWizard() {
 
         if (result.success) {
             toast({
-                title: "✅ Campaign Launched Successfully!",
-                description: `Campaign "${result.campaignName}" is now active.`,
+                title: `✅ ${t('launch.quick.success')}`,
+                description: t('launch.quick.successDesc').replace('{name}', result.campaignName || ''),
                 variant: 'default',
             });
             form.reset();
             setStep(1);
         } else if (result.redirectTo === '/create-ads') {
             toast({
-                title: "ไปที่ระบบสร้างแอดออโต้",
-                description: result.error || "ใช้ระบบสร้างแอดออโต้สำหรับการสร้างแคมเปญที่สมบูรณ์",
+                title: t('launch.quick.goCreateAds'),
+                description: result.error || t('launch.quick.goCreateAdsDesc'),
                 variant: 'default',
             });
             router.push('/create-ads');
@@ -110,8 +110,8 @@ export default function LaunchWizard() {
         }
     } catch (error) {
         toast({
-            title: "🔥 Error Launching Campaign",
-            description: error instanceof Error ? error.message : "Could not create campaign.",
+            title: `🔥 ${t('launch.quick.error')}`,
+            description: error instanceof Error ? error.message : t('launch.quick.errorDesc'),
             variant: "destructive",
         });
     } finally {
@@ -120,10 +120,10 @@ export default function LaunchWizard() {
   };
   
   const steps = [
-    { num: 1, title: 'Upload Video', icon: FileVideo },
-    { num: 2, title: 'Select Page', icon: Facebook },
-    { num: 3, title: 'Configure Ads', icon: Users },
-    { num: 4, title: 'Review & Launch', icon: Rocket },
+    { num: 1, title: t('launch.quick.steps.uploadVideo'), icon: FileVideo },
+    { num: 2, title: t('launch.quick.steps.selectPage'), icon: Facebook },
+    { num: 3, title: t('launch.quick.steps.configureAds'), icon: Users },
+    { num: 4, title: t('launch.quick.steps.reviewLaunch'), icon: Rocket },
   ];
 
   const CurrentIcon = steps[step - 1].icon;
@@ -138,19 +138,19 @@ export default function LaunchWizard() {
             </div>
             {steps[step - 1].title}
         </CardTitle>
-        <CardDescription>Step {step} of 4</CardDescription>
+        <CardDescription>{t('launch.quick.stepOf').replace('{step}', String(step))}</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="min-h-[200px]">
           {step === 1 && (
             <div className="space-y-2">
-              <Label htmlFor="videoFile">Ad Video</Label>
+              <Label htmlFor="videoFile">{t('launch.quick.adVideo')}</Label>
               <Input id="videoFile" type="file" accept="video/mp4,video/quicktime" {...register('videoFile')} />
               {errors.videoFile && <p className="text-sm text-destructive">{errors.videoFile.message as string}</p>}
               {videoFile && videoFile.length > 0 && (
                 <div className="flex items-center gap-2 text-sm text-green-600 pt-2">
                   <CheckCircle className="h-4 w-4" />
-                  <span>{videoFile[0].name} uploaded.</span>
+                  <span>{videoFile[0].name} {t('launch.quick.uploaded')}</span>
                 </div>
               )}
             </div>
@@ -162,10 +162,10 @@ export default function LaunchWizard() {
               ) : (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="adAccountId">บัญชีโฆษณา (Ad Account)</Label>
+                    <Label htmlFor="adAccountId">{t('launch.quick.adAccount')}</Label>
                     <Select onValueChange={(v) => { setValue('adAccountId', v, { shouldValidate: true }); setValue('pageId', ''); }} value={adAccountId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="เลือกบัญชีโฆษณา" />
+                        <SelectValue placeholder={t('launch.quick.selectAdAccount')} />
                       </SelectTrigger>
                       <SelectContent>
                         {displayAccounts.map((acc) => (
@@ -176,10 +176,10 @@ export default function LaunchWizard() {
                     {errors.adAccountId && <p className="text-sm text-destructive">{errors.adAccountId.message}</p>}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="pageId">Facebook Page</Label>
+                    <Label htmlFor="pageId">{t('launch.quick.facebookPage')}</Label>
                     <Select onValueChange={(value) => setValue('pageId', value, { shouldValidate: true })} value={pageId} disabled={!adAccountId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="เลือกเพจที่จะใช้โฆษณา" />
+                        <SelectValue placeholder={t('launch.quick.selectPage')} />
                       </SelectTrigger>
                       <SelectContent>
                         {displayPages.map((page) => (
@@ -196,52 +196,52 @@ export default function LaunchWizard() {
           {step === 3 && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="adCount">Number of Ad Variations</Label>
+                <Label htmlFor="adCount">{t('launch.quick.adVariations')}</Label>
                 <Input id="adCount" type="number" min="1" max="5" {...register('adCount')} />
-                <p className="text-sm text-muted-foreground">AI will generate this many ad copies.</p>
+                <p className="text-sm text-muted-foreground">{t('launch.quick.aiHint')}</p>
                 {errors.adCount && <p className="text-sm text-destructive">{errors.adCount.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="beneficiaryName">ชื่อผู้รับผลประโยชน์ (Beneficiary) *</Label>
+                <Label htmlFor="beneficiaryName">{t('launch.quick.beneficiary')}</Label>
                 <Input 
                   id="beneficiaryName" 
                   type="text" 
-                  placeholder="เช่น ชื่อบริษัทหรือชื่อบุคคล" 
+                  placeholder={t('launch.quick.beneficiaryPlaceholder')} 
                   {...register('beneficiaryName')} 
                 />
-                <p className="text-sm text-muted-foreground">ตามกฎหมายไทย ต้องระบุผู้รับผลประโยชน์ในโฆษณา</p>
+                <p className="text-sm text-muted-foreground">{t('launch.quick.beneficiaryNote')}</p>
                 {errors.beneficiaryName && <p className="text-sm text-destructive">{errors.beneficiaryName.message}</p>}
               </div>
             </div>
           )}
           {step === 4 && (
             <div className="space-y-4">
-              <h3 className="font-semibold">Review your campaign settings:</h3>
+              <h3 className="font-semibold">{t('launch.quick.reviewTitle')}</h3>
               <ul className="list-disc list-inside space-y-2 text-sm text-muted-foreground bg-secondary p-4 rounded-lg">
-                <li><strong>Video:</strong> {form.getValues('videoFile')?.[0]?.name}</li>
-                <li><strong>Ad Account:</strong> {displayAccounts.find(a => a.id === form.getValues('adAccountId'))?.name ?? form.getValues('adAccountId')}</li>
-                <li><strong>Facebook Page:</strong> {displayPages.find(p => p.id === form.getValues('pageId'))?.name ?? form.getValues('pageId')}</li>
-                <li><strong>Ad Variations:</strong> {form.getValues('adCount')}</li>
-                <li><strong>Beneficiary:</strong> {form.getValues('beneficiaryName')}</li>
-                <li><strong>Objective:</strong> Messages</li>
-                <li><strong>Targeting:</strong> Broad (Thailand, 20+)</li>
-                <li><strong>Daily Budget:</strong> $20 USD</li>
+                <li><strong>{t('launch.quick.review.video')}:</strong> {form.getValues('videoFile')?.[0]?.name}</li>
+                <li><strong>{t('launch.quick.review.adAccount')}:</strong> {displayAccounts.find(a => a.id === form.getValues('adAccountId'))?.name ?? form.getValues('adAccountId')}</li>
+                <li><strong>{t('launch.quick.review.page')}:</strong> {displayPages.find(p => p.id === form.getValues('pageId'))?.name ?? form.getValues('pageId')}</li>
+                <li><strong>{t('launch.quick.review.variations')}:</strong> {form.getValues('adCount')}</li>
+                <li><strong>{t('launch.quick.review.beneficiary')}:</strong> {form.getValues('beneficiaryName')}</li>
+                <li><strong>{t('launch.quick.review.objective')}:</strong> {t('launch.quick.messages')}</li>
+                <li><strong>{t('launch.quick.review.targeting')}:</strong> {t('launch.quick.broadTargeting')}</li>
+                <li><strong>{t('launch.quick.review.budget')}:</strong> {t('launch.quick.budgetUsd')}</li>
               </ul>
             </div>
           )}
         </CardContent>
         <CardFooter className="flex justify-between">
           <Button type="button" variant="outline" onClick={prevStep} disabled={step === 1 || isSubmitting}>
-            Back
+            {t('launch.quick.back')}
           </Button>
           {step < 4 ? (
             <Button type="button" onClick={nextStep} disabled={isSubmitting}>
-              Next
+              {t('launch.quick.next')}
             </Button>
           ) : (
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
-              Launch Campaign
+              {t('launch.quick.launch')}
             </Button>
           )}
         </CardFooter>

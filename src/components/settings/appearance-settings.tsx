@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useThemeColor } from '@/contexts/ThemeColorContext';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Moon, Sun, Monitor, Check } from 'lucide-react';
+import { Moon, Sun, Monitor, Check, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -24,9 +24,48 @@ export function AppearanceSettings() {
     const { theme, setTheme } = useTheme();
     const { colors, setPrimaryColor, resetColors } = useThemeColor();
     const [mounted, setMounted] = useState(false);
+    const [timezone, setTimezone] = useState('');
 
     useEffect(() => {
         setMounted(true);
+        setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    }, []);
+
+    const timezones = useMemo(() => {
+        return Intl.supportedValuesOf('timeZone')
+            .map((tz) => {
+                let offset = '';
+                try {
+                    offset = new Intl.DateTimeFormat('en-US', {
+                        timeZone: tz,
+                        timeZoneName: 'shortOffset'
+                    })
+                    .formatToParts(new Date())
+                    .find((part) => part.type === 'timeZoneName')?.value || '';
+                } catch (e) {
+                    return null;
+                }
+
+                if (!offset) return null;
+
+                // Calculate numeric offset for sorting
+                let minutes = 0;
+                if (offset === 'GMT') {
+                    minutes = 0;
+                } else {
+                    const match = offset.match(/GMT([+-])(\d+)(?::(\d+))?/);
+                    if (match) {
+                        const sign = match[1] === '+' ? 1 : -1;
+                        const h = parseInt(match[2], 10);
+                        const m = match[3] ? parseInt(match[3], 10) : 0;
+                        minutes = sign * (h * 60 + m);
+                    }
+                }
+
+                return { value: tz, label: tz.replace(/_/g, ' '), offset, minutes };
+            })
+            .filter((item): item is NonNullable<typeof item> => item !== null)
+            .sort((a, b) => a.minutes - b.minutes);
     }, []);
 
     if (!mounted) {
@@ -121,6 +160,34 @@ export function AppearanceSettings() {
             <div className="space-y-2">
                 <Label className="text-sm font-medium">{t('settings.language', 'Language')}</Label>
                 <LanguageSelector />
+            </div>
+
+            {/* Timezone */}
+            <div className="space-y-2">
+                <Label className="text-sm font-medium">{t('settings.appearance.timezone', 'Timezone')}</Label>
+                <div className="flex flex-col gap-1.5">
+                    <Select value={timezone} onValueChange={setTimezone}>
+                        <SelectTrigger className="w-full">
+                            <div className="flex items-center gap-2">
+                                <Globe className="h-4 w-4 text-muted-foreground" />
+                                <SelectValue placeholder={t('settings.appearance.selectTimezone', 'Select timezone')} />
+                            </div>
+                        </SelectTrigger>
+                        <SelectContent className="h-[300px]">
+                            {timezones.map((tz) => (
+                                <SelectItem key={tz.value} value={tz.value}>
+                                    <span className="text-muted-foreground mr-2 min-w-[4rem] inline-block">
+                                        {tz.offset}
+                                    </span>
+                                    {tz.label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <p className="text-[0.8rem] text-muted-foreground">
+                        {t('settings.appearance.timezoneDesc', 'We automatically detected this from your system settings.')}
+                    </p>
+                </div>
             </div>
 
             {/* Reset */}

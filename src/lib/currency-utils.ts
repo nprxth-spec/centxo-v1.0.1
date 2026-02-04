@@ -86,6 +86,7 @@ export function formatCurrencyByCode(
     const opts: Intl.NumberFormatOptions = {
         style: 'currency',
         currency: curr,
+        currencyDisplay: 'narrowSymbol', // Use narrow symbol (e.g., ฿ instead of THB)
         maximumFractionDigits: maxFrac,
         minimumFractionDigits: options?.minimumFractionDigits,
     };
