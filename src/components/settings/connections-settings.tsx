@@ -403,12 +403,12 @@ export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () =>
                             Remove team member?
                         </AlertDialogTitle>
                         <AlertDialogDescription className="text-base space-y-2">
-                            <p>
+                            <div>
                                 Are you sure you want to remove {memberToRemove?.facebookName || ''} from your team?
-                            </p>
-                            <p className="font-semibold text-destructive">
+                            </div>
+                            <div className="font-semibold text-destructive">
                                 This will immediately revoke their access to all team resources.
-                            </p>
+                            </div>
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
