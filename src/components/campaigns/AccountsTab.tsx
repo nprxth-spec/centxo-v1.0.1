@@ -266,7 +266,7 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
 
                     return {
                         id: acc.id,
-                        name: acc.name,
+                        name: fbAccount?.name || acc.name, // Use Facebook API name (most recent), fallback to context name
                         account_id: acc.account_id,
                         businessName: fbAccount?.business_name || '-',
                         businessProfilePictureUri: fbAccount?.business_profile_picture_uri,
