@@ -7,11 +7,17 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Facebook, Loader2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 export function AdAccountsSettings() {
     const { t } = useLanguage();
     const { adAccounts, pages, businesses, loading } = useConfig();
     const router = useRouter();
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     // Check if we have any ad accounts, pages, or businesses from team members
     const hasData = adAccounts.length > 0 || pages.length > 0 || businesses.length > 0;
@@ -20,7 +26,7 @@ export function AdAccountsSettings() {
         router.push('/settings?section=team');
     };
 
-    if (loading) {
+    if (!isMounted || loading) {
         return (
             <div className="space-y-6">
                 <div className="flex items-center justify-center p-12">
