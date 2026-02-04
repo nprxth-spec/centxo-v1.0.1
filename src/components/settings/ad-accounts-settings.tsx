@@ -7,17 +7,28 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Facebook, Loader2, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useContext } from 'react';
+import { FacebookAccountAddedContext } from './connections-page';
 
 export function AdAccountsSettings() {
     const { t } = useLanguage();
-    const { adAccounts, pages, businesses, loading } = useConfig();
+    const { adAccounts, pages, businesses, loading, refreshData } = useConfig();
     const router = useRouter();
     const [isMounted, setIsMounted] = useState(false);
+    const { accountAdded, setAccountAdded } = useContext(FacebookAccountAddedContext);
 
     useEffect(() => {
         setIsMounted(true);
-    }, []);
+        // Refresh data when this tab is viewed or when Facebook account is added
+        refreshData(true);
+    }, [refreshData, accountAdded]);
+
+    // Reset the flag after refresh
+    useEffect(() => {
+        if (accountAdded) {
+            setAccountAdded(false);
+        }
+    }, [accountAdded, setAccountAdded]);
 
     // Check if we have any ad accounts, pages, or businesses from team members
     const hasData = adAccounts.length > 0 || pages.length > 0 || businesses.length > 0;

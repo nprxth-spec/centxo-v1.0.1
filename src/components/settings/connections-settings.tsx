@@ -45,7 +45,7 @@ interface TeamData {
     members: TeamMember[];
 }
 
-export function ConnectionsSettings() {
+export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () => void }) {
     const { t } = useLanguage();
     const { data: session } = useSession();
     const { toast } = useToast();
@@ -78,6 +78,7 @@ export function ConnectionsSettings() {
             setSuccessMessage('Facebook connected successfully!');
             setTimeout(() => {
                 fetchConnectionsData(true); // Force refresh to show new connection
+                onAccountAdded?.(); // Signal that a new account was added
                 setSuccessMessage('');
             }, 3000);
 
@@ -93,6 +94,7 @@ export function ConnectionsSettings() {
             setSuccessMessage('Facebook account added successfully!');
             setTimeout(() => {
                 fetchConnectionsData(true); // Force refresh to show new member
+                onAccountAdded?.(); // Signal that a new account was added
                 setSuccessMessage('');
             }, 1000);
 
