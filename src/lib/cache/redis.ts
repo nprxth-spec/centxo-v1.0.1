@@ -1,24 +1,36 @@
 /**
  * Redis Cache Client for Meta API Response Caching
  * 
- * Install: npm install @upstash/redis
+ * Uses Upstash Redis via Vercel Integrations (Recommended)
  * 
- * Setup Upstash:
- * 1. Go to https://upstash.com
- * 2. Create free Redis database
- * 3. Copy UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN
- * 4. Add to .env.local
+ * Setup via Vercel:
+ * 1. Go to Vercel Project Settings → Integrations
+ * 2. Add Redis/Upstash integration
+ * 3. Env vars will be auto-populated (UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN)
+ * 4. Redeploy project
  */
 
 import { Redis } from '@upstash/redis';
 
-// Initialize Redis client
-const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+const redisRestUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.STORAGE_REDIS_KV_REST_API_URL;
+const redisRestToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.STORAGE_REDIS_KV_REST_API_TOKEN;
+
+// Initialize Redis client from Vercel integration env vars
+const redis = redisRestUrl && redisRestToken
   ? new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    url: redisRestUrl,
+    token: redisRestToken,
   })
   : null;
+
+// Log Redis connection status on initialization
+if (typeof window === 'undefined') { // Only in server-side
+  if (redis) {
+    console.log('✅ [Redis Cache] Redis configured successfully');
+  } else {
+    console.warn('⚠️ [Redis Cache] Redis NOT configured - caching disabled. Set UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN or STORAGE_REDIS_KV_REST_API_URL/STORAGE_REDIS_KV_REST_API_TOKEN');
+  }
+}
 
 /**
  * Cache TTL configurations (in seconds)

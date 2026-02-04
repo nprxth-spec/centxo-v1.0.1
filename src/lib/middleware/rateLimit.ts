@@ -13,13 +13,23 @@ interface RateLimitConfig {
     windowMs: number;
 }
 
-// Initialize Redis client for rate limiting
-const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+const redisRestUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.STORAGE_REDIS_KV_REST_API_URL;
+const redisRestToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.STORAGE_REDIS_KV_REST_API_TOKEN;
+
+// Initialize Redis client for rate limiting via Vercel integration env vars
+const redis = redisRestUrl && redisRestToken
     ? new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN,
+        url: redisRestUrl,
+        token: redisRestToken,
     })
     : null;
+
+// Log Redis connection status on initialization
+if (redis) {
+    console.log('✅ [Rate Limit] Redis configured for distributed rate limiting');
+} else {
+    console.warn('⚠️ [Rate Limit] Redis NOT configured - falling back to in-memory rate limiting. Set UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN or STORAGE_REDIS_KV_REST_API_URL/STORAGE_REDIS_KV_REST_API_TOKEN');
+}
 
 // Fallback in-memory storage for development
 class InMemoryRateLimiter {

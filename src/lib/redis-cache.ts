@@ -15,7 +15,7 @@ export async function getRedisClient() {
         return getRedisClient()
     }
 
-    const redisUrl = process.env.REDIS_URL
+    const redisUrl = process.env.REDIS_URL || process.env.STORAGE_REDIS_REDIS_URL || process.env.STORAGE_REDIS_KV_URL
 
     // Allow disabling Redis via env variable
     if (process.env.DISABLE_REDIS === 'true') {
