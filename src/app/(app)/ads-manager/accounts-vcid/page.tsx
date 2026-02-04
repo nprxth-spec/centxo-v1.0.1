@@ -10,6 +10,7 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { Search, RefreshCw, Download, Building2, Briefcase, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NoFacebookAccountsPrompt } from '@/components/NoFacebookAccountsPrompt';
+import { useConfig } from '@/contexts/AdAccountContext';
 
 type TabKey = 'accounts' | 'accounts-by-business' | 'pages-by-business';
 
@@ -19,6 +20,7 @@ export default function AdsManagerAccountsVcidPage() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const pathname = usePathname();
+    const { refreshData } = useConfig();
 
     const tabFromUrl = searchParams.get('tab') || 'accounts';
     const validTabs: TabKey[] = ['accounts', 'accounts-by-business', 'pages-by-business'];
@@ -29,6 +31,13 @@ export default function AdsManagerAccountsVcidPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(false);
     const [hasTeamMembers, setHasTeamMembers] = useState<boolean | null>(null);
+
+    // Refresh context data when this page loads to ensure latest accounts are available
+    useEffect(() => {
+        if (session?.user) {
+            refreshData(true);
+        }
+    }, [session, refreshData]);
 
     const handleTabChange = (tab: TabKey) => {
         const params = new URLSearchParams(searchParams?.toString() || '');

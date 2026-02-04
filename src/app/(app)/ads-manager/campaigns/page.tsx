@@ -229,7 +229,11 @@ export default function CampaignsPage() {
 
   useEffect(() => {
     setIsMounted(true);
-  }, []);
+    // Refresh context data when this page loads to ensure latest accounts are available
+    if (session?.user) {
+      refreshData(true);
+    }
+  }, [session, refreshData]);
 
 
   // Initialize viewSelectedAccountIds with global selection when component mounts (optional, or start empty)
