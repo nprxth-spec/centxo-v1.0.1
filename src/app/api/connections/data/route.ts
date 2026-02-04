@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import type { TeamMember as TeamMemberModel } from '@prisma/client';
 
 /**
  * Combined Connections API - inline DB queries, no internal HTTP fetches.
@@ -53,19 +54,7 @@ export async function GET(request: NextRequest) {
     });
 
     let host: { id: string; name: string | null; email: string | null; image: string | null; role: string };
-    let teamMembers: Array<{
-      id: string;
-      memberType: string;
-      facebookUserId: string | null;
-      facebookName: string | null;
-      facebookEmail: string | null;
-      memberEmail: string | null;
-      memberName: string | null;
-      memberImage: string | null;
-      role: string;
-      addedAt: Date;
-      lastUsedAt: Date;
-    }>;
+    let teamMembers: TeamMemberModel[];
 
     if (membershipTeam) {
       host = {
