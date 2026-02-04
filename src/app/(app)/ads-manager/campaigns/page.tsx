@@ -2153,7 +2153,7 @@ export default function CampaignsPage() {
                     <TableBody className="[&_tr:last-child]:!border-b [&_tr:last-child]:!border-gray-200 dark:[&_tr:last-child]:!border-zinc-800 [&_td]:!py-1 [&_td]:!px-3">
                       {loading ? (
                         Array.from({ length: 10 }).map((_, i) => (
-                          <TableRow key={i} className="animate-pulse">
+                          <TableRow key={i} className="animate-pulse h-[55px]">
                             <TableCell className="w-12 min-w-[3rem] max-w-[3rem] px-3 py-1 !pr-3 !pl-3 text-center align-middle"><div className="flex justify-center items-center w-full"><div className="h-5 w-5 bg-gray-200 dark:bg-zinc-800 rounded-[6px]"></div></div></TableCell>
                             <TableCell><div className="h-4 w-8 bg-gray-200 dark:bg-zinc-800 rounded-full mx-auto"></div></TableCell>
                             {visible('campaigns', 'adAccount') && <TableCell><div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-32"></div></TableCell>}
@@ -2189,7 +2189,7 @@ export default function CampaignsPage() {
                         </TableRow>
                       ) : (
                         filteredCampaigns.map((campaign, index) => (
-                          <TableRow key={campaign.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors border-b border-gray-200 dark:border-zinc-800 cursor-pointer" onClick={() => handleToggleCampaignSelection(campaign.id, !selectedCampaignIds.has(campaign.id))}>
+                          <TableRow key={campaign.id} className="h-[55px] hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors border-b border-gray-200 dark:border-zinc-800 cursor-pointer" onClick={() => handleToggleCampaignSelection(campaign.id, !selectedCampaignIds.has(campaign.id))}>
                             <TableCell
                               className="w-12 min-w-[3rem] max-w-[3rem] px-3 py-1 !pr-3 !pl-3 text-center align-middle text-sm text-gray-600 dark:text-gray-400"
                               onClick={(e) => e.stopPropagation()}
@@ -2566,7 +2566,7 @@ export default function CampaignsPage() {
                     <TableBody className="[&_tr:last-child]:!border-b [&_tr:last-child]:!border-gray-200 dark:[&_tr:last-child]:!border-zinc-800 [&_td]:!py-1 [&_td]:!px-3">
                       {loading ? (
                         Array.from({ length: 10 }).map((_, i) => (
-                          <TableRow key={i} className="animate-pulse">
+                          <TableRow key={i} className="animate-pulse h-[55px]">
                             <TableCell className="w-12 min-w-[3rem] max-w-[3rem] px-3 py-1 !pr-3 !pl-3 text-center align-middle"><div className="flex justify-center items-center w-full"><div className="h-5 w-5 bg-gray-200 dark:bg-zinc-800 rounded-[6px]"></div></div></TableCell>
                             <TableCell><div className="h-6 bg-gray-200 dark:bg-zinc-800 rounded-full w-11 mx-auto"></div></TableCell>
                             {visible('adsets', 'adAccount') && <TableCell><div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-32"></div></TableCell>}
@@ -2606,7 +2606,7 @@ export default function CampaignsPage() {
                         </TableRow>
                       ) : (
                         filteredAdSets.map((adSet, index) => (
-                          <TableRow key={adSet.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer" onClick={() => handleToggleAdSetSelection(adSet.id, !selectedAdSetIds.has(adSet.id))}>
+                          <TableRow key={adSet.id} className="h-[55px] hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer" onClick={() => handleToggleAdSetSelection(adSet.id, !selectedAdSetIds.has(adSet.id))}>
                             <TableCell
                               className="w-12 min-w-[3rem] max-w-[3rem] px-3 py-1 !pr-3 !pl-3 text-center align-middle text-sm text-gray-600 dark:text-gray-400"
                               onClick={(e) => e.stopPropagation()}
@@ -3034,7 +3034,7 @@ export default function CampaignsPage() {
                     <TableBody className="[&_tr:last-child]:!border-b [&_tr:last-child]:!border-gray-200 dark:[&_tr:last-child]:!border-zinc-800 [&_td]:!py-1 [&_td]:!px-3">
                       {loading ? (
                         Array.from({ length: 10 }).map((_, i) => (
-                          <TableRow key={i} className="animate-pulse">
+                          <TableRow key={i} className="animate-pulse h-[55px]">
                             <TableCell className="w-12 min-w-[3rem] max-w-[3rem] px-3 py-1 !pr-3 !pl-3 text-center align-middle"><div className="flex justify-center items-center w-full"><div className="h-5 w-5 bg-gray-200 dark:bg-zinc-800 rounded-[6px]"></div></div></TableCell>
                             <TableCell><div className="h-4 w-8 bg-gray-200 dark:bg-zinc-800 rounded-full mx-auto"></div></TableCell>
                             {visible('ads', 'adAccount') && <TableCell><div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-32"></div></TableCell>}
@@ -3086,7 +3086,7 @@ export default function CampaignsPage() {
                         </TableRow>
                       ) : (
                         filteredAds.map((ad, index) => (
-                          <TableRow key={ad.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer" onClick={() => handleToggleAdSelection(ad.id, !selectedAdIds.has(ad.id))}>
+                          <TableRow key={ad.id} className="h-[55px] hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer" onClick={() => handleToggleAdSelection(ad.id, !selectedAdIds.has(ad.id))}>
                             <TableCell className="w-12 min-w-[3rem] max-w-[3rem] px-3 py-1 !pr-3 !pl-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
                               <div className="flex justify-center items-center w-full">
                                 <Checkbox
