@@ -1,23 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getPages } from '@/lib/facebook-adbox';
-import { getAdboxAccessToken } from '@/app/actions/adbox';
-
-const PAGES_CACHE_TTL = 30 * 60 * 1000; // 30 min - reduce gr:get:User/accounts
+import { getAdboxAccessToken, fetchPages } from '@/app/actions/adbox';
 const PICTURE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hr - reduce gr:get:User/picture
 
 declare global {
-  var _adboxPagesCache: Record<string, { pages: any[]; timestamp: number }> | undefined;
   var _adboxPictureCache: Record<string, { buffer: ArrayBuffer; contentType: string; timestamp: number }> | undefined;
 }
 
-const pagesCache = globalThis._adboxPagesCache ?? {};
 const pictureCache = globalThis._adboxPictureCache ?? {};
-if (typeof globalThis !== 'undefined') {
-  globalThis._adboxPagesCache = pagesCache;
-  globalThis._adboxPictureCache = pictureCache;
-}
+if (typeof globalThis !== 'undefined') globalThis._adboxPictureCache = pictureCache;
 
 /**
  * GET /api/adbox/participant-picture?participantId=XXX&pageId=YYY
@@ -55,12 +47,7 @@ export async function GET(req: NextRequest) {
 
     let pageToken = userToken;
     if (pageId) {
-      const pagesCacheKey = `pages_${session.user.id}`;
-      let pages = pagesCache[pagesCacheKey]?.pages;
-      if (!pages || Date.now() - (pagesCache[pagesCacheKey]?.timestamp ?? 0) >= PAGES_CACHE_TTL) {
-        pages = await getPages(userToken);
-        pagesCache[pagesCacheKey] = { pages, timestamp: Date.now() };
-      }
+      const pages = await fetchPages();
       const page = pages.find((p: { id: string }) => p.id === pageId);
       if (page?.access_token) pageToken = page.access_token;
     }
