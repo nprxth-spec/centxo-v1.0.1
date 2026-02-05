@@ -142,6 +142,24 @@ export default function CreateAdsPage() {
   const hasMedia = useMemo(() => !!mediaFile || !!selectedLibraryName, [mediaFile, selectedLibraryName]);
   const hasContent = hasMedia;
 
+  // Selected ad account currency (THB min 40, USD min 5)
+  const selectedAcc = useMemo(() => {
+    const norm = (s: string) => (String(s || '').replace(/^act_/, ''));
+    const aid = norm(form.adAccountId);
+    return [...adAccounts, ...allAdAccounts].find(
+      (a) => norm(a.account_id) === aid || norm(a.id) === aid
+    ) ?? null;
+  }, [form.adAccountId, adAccounts, allAdAccounts]);
+  const accountCurrency = selectedAcc?.currency || 'THB';
+  const minDailyBudget = accountCurrency === 'THB' ? 40 : 5;
+
+  // Auto-adjust budget when currency requires higher minimum (e.g. THB min 40)
+  useEffect(() => {
+    if (form.dailyBudget < minDailyBudget) {
+      setForm((p) => ({ ...p, dailyBudget: minDailyBudget }));
+    }
+  }, [minDailyBudget]);
+
   const isVideo = () => {
     if (mediaFile) return mediaFile.type.startsWith('video/');
     if (selectedLibraryName) return /\.(mp4|mov|webm|avi)$/i.test(selectedLibraryName);
@@ -322,12 +340,18 @@ export default function CreateAdsPage() {
   const canProceed = useCallback(() => {
     if (currentStep === 1) return !!form.adAccountId && !!form.pageId;
     if (currentStep === 2) return hasContent;
-    if (currentStep === 3) return form.dailyBudget > 0;
+    if (currentStep === 3) return form.dailyBudget >= minDailyBudget;
     if (currentStep === 4) return true;
     return true;
-  }, [currentStep, hasContent, form.adAccountId, form.pageId, form.dailyBudget]);
+  }, [currentStep, hasContent, form.adAccountId, form.pageId, form.dailyBudget, minDailyBudget]);
 
   const handleLaunch = async () => {
+    if (form.dailyBudget < minDailyBudget) {
+      setError(accountCurrency === 'THB'
+        ? t('createAds.budget.minThbError', 'งบขั้นต่ำสำหรับ THB คือ 40 บาท')
+        : t('createAds.budget.minUsdError', 'Minimum for USD is $5'));
+      return;
+    }
     setLoading(true);
     setError('');
     setSuccess('');
@@ -1205,13 +1229,27 @@ export default function CreateAdsPage() {
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
-                        <Label>{t('createAds.budget.daily', 'งบรายวัน (บาท/ดอลลาร์)')}</Label>
+                        <Label>
+                          {t('createAds.budget.daily', 'งบรายวัน')} ({accountCurrency})
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            {accountCurrency === 'THB'
+                              ? t('createAds.budget.minThb', 'ขั้นต่ำ 40 บาท')
+                              : t('createAds.budget.minUsd', 'ขั้นต่ำ $5')}
+                          </span>
+                        </Label>
                         <Input
                           type="number"
-                          min={1}
+                          min={minDailyBudget}
                           value={form.dailyBudget}
-                          onChange={(e) => setForm((p) => ({ ...p, dailyBudget: Math.max(1, Number(e.target.value) || 1) }))}
+                          onChange={(e) => setForm((p) => ({ ...p, dailyBudget: Math.max(minDailyBudget, Number(e.target.value) || minDailyBudget) }))}
                         />
+                        {form.dailyBudget < minDailyBudget && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400">
+                            {accountCurrency === 'THB'
+                              ? t('createAds.budget.minThbError', 'งบขั้นต่ำสำหรับ THB คือ 40 บาท')
+                              : t('createAds.budget.minUsdError', 'Minimum for USD is $5')}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="space-y-3">
@@ -1663,7 +1701,7 @@ export default function CreateAdsPage() {
                           </div>
                           <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Budget</span>
-                            <span className="font-medium">{form.dailyBudget} / day · {form.campaignCount}C / {form.adSetCount}AS / {form.adsCount} Ads</span>
+                            <span className="font-medium">{form.dailyBudget} {accountCurrency} / day · {form.campaignCount}C / {form.adSetCount}AS / {form.adsCount} Ads</span>
                           </div>
                         </div>
                       </div>
