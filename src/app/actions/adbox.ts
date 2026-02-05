@@ -296,15 +296,18 @@ export async function syncMessagesOnce(
 
       const atts = msg.attachments as { data?: Array<Record<string, unknown>> } | undefined;
       if (atts?.data?.length) {
-        const attachments = atts.data.map((att: Record<string, unknown>) => ({
-          type: att.type || 'file',
-          url: (att as { image_data?: { url?: string }; file_url?: string }).image_data?.url ||
+        const attachments = atts.data.map((att: Record<string, unknown>) => {
+          const t = att.type;
+          const typeStr = typeof t === 'string' ? t : 'file';
+          const url =
+            (att as { image_data?: { url?: string }; file_url?: string }).image_data?.url ||
             (att as { file_url?: string }).file_url ||
-            null,
-        }));
+            null;
+          return { type: typeStr, url };
+        });
         attachmentsJson = JSON.stringify(attachments);
-        const sticker = attachments.find((a) => (a as { type?: string }).type === 'sticker');
-        if (sticker) stickerUrl = (sticker as { url?: string }).url || null;
+        const sticker = attachments.find((a) => a.type === 'sticker');
+        if (sticker) stickerUrl = sticker.url || null;
         if (!messageContent) messageContent = '[Sticker]';
       }
 
