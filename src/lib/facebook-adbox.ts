@@ -7,7 +7,7 @@ export async function getPages(accessToken: string) {
   let nextUrl: string | null = `https://graph.facebook.com/v22.0/me/accounts?fields=name,id,access_token,picture{url},tasks&limit=100&access_token=${accessToken}`;
 
   while (nextUrl) {
-    const response = await fetch(nextUrl);
+    const response: Response = await fetch(nextUrl);
     const data = await response.json();
 
     if (data.error) {
@@ -50,7 +50,7 @@ export async function getPageConversations(
     const maxPages = 5; // up to ~250 conversations
 
     while (url && pageCount < maxPages) {
-      const response = await fetch(url);
+      const response: Response = await fetch(url);
       const data = await response.json();
 
       if (data.error) {
@@ -116,7 +116,7 @@ export async function getConversationMessages(
   const maxPages = 25; // ~500 messages
 
   while (url && pageCount < maxPages) {
-    const response = await fetch(url);
+    const response: Response = await fetch(url);
     const data = await response.json();
 
     if (data.error) break;
@@ -141,7 +141,7 @@ export async function sendMessage(
   if (pageData.error) throw new Error(pageData.error.message);
   const pageAccessToken = pageData.access_token;
 
-  const response = await fetch(
+  const response: Response = await fetch(
     `https://graph.facebook.com/v22.0/me/messages?access_token=${pageAccessToken}`,
     {
       method: 'POST',

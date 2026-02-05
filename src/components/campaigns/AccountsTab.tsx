@@ -511,7 +511,7 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="text-center">
                     <p className="text-red-500 mb-4">{error || t('accounts.error', 'Failed to load accounts')}</p>
-                    <Button onClick={fetchAccounts}>{t('accounts.tryAgain', 'Try Again')}</Button>
+                    <Button onClick={() => fetchAccounts(true)}>{t('accounts.tryAgain', 'Try Again')}</Button>
                 </div>
             </div>
         );
