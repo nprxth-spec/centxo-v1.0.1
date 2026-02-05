@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { decryptToken } from '@/lib/services/metaClient';
 
-const CACHE_TTL = 60 * 60 * 1000; // 1 hr - reduce gr:get:User/picture
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hr - reduce gr:get:User/picture
 declare global {
   var _profilePictureCache: Record<string, { buffer: ArrayBuffer; contentType: string; timestamp: number }> | undefined;
 }

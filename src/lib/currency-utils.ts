@@ -76,12 +76,18 @@ export function getCurrencySymbol(currency: string = 'USD'): string {
  * @param locale Optional locale (default: 'en-US')
  * @returns Formatted string e.g. "฿1,234" or "$12.34"
  */
+/** Valid ISO 4217 codes are 3 letters; reject "-", empty, or invalid */
+function isValidCurrencyCode(code: string): boolean {
+    const c = (code || '').trim().toUpperCase();
+    return c.length === 3 && /^[A-Z]{3}$/.test(c);
+}
+
 export function formatCurrencyByCode(
     amount: number,
     currency: string = 'USD',
     options?: { maximumFractionDigits?: number; minimumFractionDigits?: number }
 ): string {
-    const curr = (currency || 'USD').toUpperCase();
+    const curr = isValidCurrencyCode(currency) ? (currency || 'USD').toUpperCase() : 'USD';
     const maxFrac = options?.maximumFractionDigits ?? (hasDecimalPlaces(curr) ? 2 : 0);
     const opts: Intl.NumberFormatOptions = {
         style: 'currency',

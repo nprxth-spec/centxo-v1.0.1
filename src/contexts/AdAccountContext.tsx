@@ -251,20 +251,18 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef({ adAccounts, pages, businesses, businessPages, businessAccounts, lastFetched, isRateLimited, selectedAccounts, selectedPages });
   stateRef.current = { adAccounts, pages, businesses, businessPages, businessAccounts, lastFetched, isRateLimited, selectedAccounts, selectedPages };
 
-  // Start with loading=false if we have cached data (stale-while-revalidate = show fast)
-  const hasCachedData = () => {
+  // Show cached data immediately (even if expired) for faster tab load - stale-while-revalidate
+  const hasAnyCachedData = () => {
     if (typeof window === 'undefined') return false;
     try {
       const cached = localStorage.getItem('adPilotCache_v9');
       if (!cached) return false;
       const data = JSON.parse(cached);
-      const hasAny = data.accounts?.length > 0 || data.pages?.length > 0 || data.businesses?.length > 0 ||
-        data.businessPages?.length > 0 || data.businessAccounts?.length > 0;
-      const age = data.timestamp ? Date.now() - data.timestamp : Infinity;
-      return hasAny && age < CACHE_DURATION;
+      return !!(data.accounts?.length || data.pages?.length || data.businesses?.length ||
+        data.businessPages?.length || data.businessAccounts?.length);
     } catch { return false; }
   };
-  const [loading, setLoading] = useState(!hasCachedData());
+  const [loading, setLoading] = useState(!hasAnyCachedData());
   const [error, setError] = useState<string | null>(null);
 
   // Check if we have valid cache on mount to stop loading immediately

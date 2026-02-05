@@ -2,6 +2,27 @@
  * Facebook Graph API for AdBox (Messenger Inbox)
  */
 
+const PAGE_TOKEN_CACHE_TTL = 55 * 60 * 1000; // 55 min - reduce gr:get:Page
+declare global {
+  var _adboxPageTokenCache: Record<string, { token: string; ts: number }> | undefined;
+}
+const pageTokenCache = globalThis._adboxPageTokenCache ?? {};
+if (typeof globalThis !== 'undefined') globalThis._adboxPageTokenCache = pageTokenCache;
+
+export async function getPageAccessToken(userAccessToken: string, pageId: string): Promise<string> {
+  const key = pageId;
+  const c = pageTokenCache[key];
+  if (c && Date.now() - c.ts < PAGE_TOKEN_CACHE_TTL) return c.token;
+  const pageRes = await fetch(
+    `https://graph.facebook.com/v22.0/${pageId}?fields=access_token&access_token=${userAccessToken}`
+  );
+  const pageData = await pageRes.json();
+  if (pageData.error) throw new Error(pageData.error.message);
+  const token = pageData.access_token;
+  pageTokenCache[key] = { token, ts: Date.now() };
+  return token;
+}
+
 export async function getPages(accessToken: string) {
   const allPages: Array<{ id: string; name: string; access_token?: string; picture?: { data?: { url?: string } }; tasks?: string[] }> = [];
   let nextUrl: string | null = `https://graph.facebook.com/v22.0/me/accounts?fields=name,id,access_token,picture{url},tasks&limit=100&access_token=${accessToken}`;
@@ -30,14 +51,7 @@ export async function getPageConversations(
   pageAccessToken?: string
 ) {
   let token = pageAccessToken;
-  if (!token) {
-    const pageRes = await fetch(
-      `https://graph.facebook.com/v22.0/${pageId}?fields=access_token&access_token=${userAccessToken}`
-    );
-    const pageData = await pageRes.json();
-    if (pageData.error) throw new Error(pageData.error.message);
-    token = pageData.access_token;
-  }
+  if (!token) token = await getPageAccessToken(userAccessToken, pageId);
 
   const fetchConversations = async (includeLabels: boolean) => {
     let fields =
@@ -101,14 +115,7 @@ export async function getConversationMessages(
   pageAccessToken?: string
 ) {
   let token = pageAccessToken;
-  if (!token) {
-    const pageRes = await fetch(
-      `https://graph.facebook.com/v22.0/${pageId}?fields=access_token&access_token=${userAccessToken}`
-    );
-    const pageData = await pageRes.json();
-    if (pageData.error) throw new Error(pageData.error.message);
-    token = pageData.access_token;
-  }
+  if (!token) token = await getPageAccessToken(userAccessToken, pageId);
 
   let allMessages: Array<Record<string, unknown>> = [];
   let url: string | null = `https://graph.facebook.com/v22.0/${conversationId}/messages?fields=message,from,created_time,attachments{type,image_data,file_url,payload},sticker&limit=20&access_token=${token}`;
@@ -134,12 +141,7 @@ export async function sendMessage(
   recipientId: string,
   messageText: string
 ) {
-  const pageRes = await fetch(
-    `https://graph.facebook.com/v22.0/${pageId}?fields=access_token&access_token=${userAccessToken}`
-  );
-  const pageData = await pageRes.json();
-  if (pageData.error) throw new Error(pageData.error.message);
-  const pageAccessToken = pageData.access_token;
+  const pageAccessToken = await getPageAccessToken(userAccessToken, pageId);
 
   const response: Response = await fetch(
     `https://graph.facebook.com/v22.0/me/messages?access_token=${pageAccessToken}`,

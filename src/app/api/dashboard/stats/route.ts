@@ -150,12 +150,8 @@ export async function GET(request: NextRequest) {
     // Requesting expanded fields: impressions, clicks, inline_link_clicks
     const timeRangeParams = `&time_range={'since':'${apiStartDate}','until':'${apiEndDate}'}`;
 
-    // Fetch data in chunks
-    const CHUNK_SIZE = 5;
-    for (let i = 0; i < adAccountIds.length; i += CHUNK_SIZE) {
-      const chunk = adAccountIds.slice(i, i + CHUNK_SIZE);
-
-      await Promise.all(chunk.map(async (adAccountId) => {
+    // Fetch all accounts in parallel (cache reduces repeated Meta API calls)
+    await Promise.all(adAccountIds.map(async (adAccountId) => {
         try {
           // Use helper to find correct token (uses Redis cache)
           const token = await getValidTokenForAdAccount(adAccountId, tokens);
@@ -268,8 +264,7 @@ export async function GET(request: NextRequest) {
         } catch (err) {
           console.error(`Error fetching stats for account ${adAccountId}:`, err);
         }
-      }));
-    }
+    }));
 
     // --- Computed Metrics (Current) ---
     const totalRoas = totalSpend > 0 ? totalRevenue / totalSpend : 0;

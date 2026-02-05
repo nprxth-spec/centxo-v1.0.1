@@ -4,6 +4,13 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import type { TeamMember as TeamMemberModel } from '@prisma/client';
 
+const USER_ME_CACHE_TTL = 60 * 60 * 1000; // 60 min - reduce gr:get:User
+declare global {
+  var _connectionsUserMeCache: Record<string, { name: string; email: string; timestamp: number }> | undefined;
+}
+const userMeCache = globalThis._connectionsUserMeCache ?? {};
+if (typeof globalThis !== 'undefined') globalThis._connectionsUserMeCache = userMeCache;
+
 /**
  * Combined Connections API - inline DB queries, no internal HTTP fetches.
  * Returns launch + team members immediately. Client fetches pictures separately in background.
@@ -113,23 +120,32 @@ export async function GET(request: NextRequest) {
     if (user.metaAccount && !members.some((m) => m.memberType === 'facebook' && m.facebookUserId === user.metaAccount?.metaUserId)) {
       let fbName = user.name || 'Facebook Account';
       let fbEmail = user.email;
-      try {
-        const fbAccount = await prisma.account.findFirst({
-          where: { userId: user.id, provider: 'facebook' },
-          select: { access_token: true },
-        });
-        if (fbAccount?.access_token) {
-          const res = await fetch(
-            `https://graph.facebook.com/me?fields=name,email&access_token=${fbAccount.access_token}`
-          );
-          if (res.ok) {
-            const fb = await res.json();
-            if (fb.name) fbName = fb.name;
-            if (fb.email) fbEmail = fb.email;
+      const forceRefresh = request.nextUrl.searchParams.get('refresh') === 'true';
+      const cacheKey = `me_${user.id}`;
+      const cached = !forceRefresh && userMeCache[cacheKey] && Date.now() - userMeCache[cacheKey].timestamp < USER_ME_CACHE_TTL;
+      if (cached) {
+        fbName = userMeCache[cacheKey].name;
+        fbEmail = userMeCache[cacheKey].email;
+      } else {
+        try {
+          const fbAccount = await prisma.account.findFirst({
+            where: { userId: user.id, provider: 'facebook' },
+            select: { access_token: true },
+          });
+          if (fbAccount?.access_token) {
+            const res = await fetch(
+              `https://graph.facebook.com/me?fields=name,email&access_token=${fbAccount.access_token}`
+            );
+            if (res.ok) {
+              const fb = await res.json();
+              if (fb.name) fbName = fb.name;
+              if (fb.email) fbEmail = fb.email;
+              userMeCache[cacheKey] = { name: fbName, email: fbEmail || '', timestamp: Date.now() };
+            }
           }
+        } catch {
+          // Use fallbacks above
         }
-      } catch {
-        // Use fallbacks above
       }
       members.unshift({
         id: `meta-${user.metaAccount.id}`,

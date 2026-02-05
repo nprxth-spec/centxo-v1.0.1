@@ -40,8 +40,8 @@ export function ConfigForm() {
     useEffect(() => {
         if (viewFromUrl === 'business-accounts' || viewFromUrl === 'business-pages') {
             router.replace(viewFromUrl === 'business-accounts'
-                ? '/ads-manager/accounts-vcid?tab=accounts-by-business'
-                : '/ads-manager/accounts-vcid?tab=pages-by-business');
+                ? '/ads-manager/accounts?tab=accounts-by-business'
+                : '/ads-manager/accounts?tab=pages-by-business');
         } else if (viewFromUrl === 'businesses') {
             const params = new URLSearchParams(searchParams.toString());
             params.set('view', 'accounts');
@@ -157,7 +157,7 @@ export function ConfigForm() {
                         </TabsTrigger>
                     </TabsList>
                     <p className="text-xs text-muted-foreground">
-                        <Link href="/ads-manager/accounts-vcid" className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+                        <Link href="/ads-manager/accounts" className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
                             <ExternalLink className="h-3 w-3" />
                             Accounts by Business & Pages by Business
                         </Link>

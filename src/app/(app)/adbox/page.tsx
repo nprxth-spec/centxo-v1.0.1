@@ -205,7 +205,7 @@ export default function AdBoxPage() {
   useEffect(() => {
     if (selectedPageIds.length === 0 || !isInitialized || !hasToken) return;
     let isActive = true;
-    let lastSyncTime = new Date().toISOString();
+    let lastSyncTime = new Date(Date.now() - 120000).toISOString();
     const poll = async () => {
       if (!isActive) return;
       try {
@@ -270,13 +270,45 @@ export default function AdBoxPage() {
           }
         }
       } catch {}
-      if (isActive) setTimeout(poll, 1500);
+      if (isActive) setTimeout(poll, 1000);
     };
     poll();
     return () => {
       isActive = false;
     };
   }, [selectedPageIds, isInitialized, hasToken, playNotificationSound, showNotification, t]);
+
+  useEffect(() => {
+    const convId = selectedConversation?.id as string | undefined;
+    const pageId = selectedConversation?.pageId as string | undefined;
+    if (!convId || !pageId || !hasToken) return;
+    let isActive = true;
+    let liveSyncCount = 0;
+    const fastPoll = async () => {
+      if (!isActive || currentConversationIdRef.current !== convId) return;
+      try {
+        const url =
+          liveSyncCount % 5 === 0
+            ? `/api/adbox/messages/live?conversationId=${encodeURIComponent(convId)}&pageId=${encodeURIComponent(pageId)}`
+            : `/api/adbox/messages?conversationId=${encodeURIComponent(convId)}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const { messages: fresh } = await res.json();
+          if (Array.isArray(fresh) && isActive && currentConversationIdRef.current === convId) {
+            setMessages(fresh);
+            setMessageCache((c) => ({ ...c, [convId]: fresh }));
+          }
+        }
+        liveSyncCount += 1;
+      } catch {}
+      if (isActive) setTimeout(fastPoll, 1000);
+    };
+    const t = setTimeout(fastPoll, 400);
+    return () => {
+      isActive = false;
+      clearTimeout(t);
+    };
+  }, [selectedConversation?.id, selectedConversation?.pageId, hasToken]);
 
   const loadConversations = async (pageIds: string[], forceSync = false) => {
     setLoadingChat(true);
@@ -304,10 +336,11 @@ export default function AdBoxPage() {
             setTimeout(() => setToastMessage(null), 4000);
             return;
           }
-          const data = await syncConversationsOnce(
+          await syncConversationsOnce(
             selectedPages.map((p) => ({ id: p.id, access_token: p.access_token }))
           );
-          if (data.length > 0) setConversations(data);
+          const merged = await fetchConversationsFromDB(pageIds);
+          if (merged.length > 0) setConversations(merged);
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Sync failed';
           setToastMessage(msg);
@@ -782,7 +815,7 @@ export default function AdBoxPage() {
                           className={`group flex items-start gap-2 ${isFromUs ? 'justify-end' : 'justify-start'}`}
                         >
                           <div
-                            className="flex max-w-[85%] items-end gap-2 flex-row"
+                            className={`flex max-w-[85%] items-end gap-2 ${isFromUs ? 'flex-row-reverse' : 'flex-row'}`}
                           >
                             <div
                               className={`px-4 py-2 rounded-2xl text-sm ${

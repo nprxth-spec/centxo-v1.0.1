@@ -3,6 +3,13 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
+const ACCOUNT_PROFILE_CACHE_TTL = 60 * 60 * 1000; // 60 min - reduce gr:get:User
+declare global {
+  var _accountProfileCache: Record<string, { name: string; email: string; picture: string | null; ts: number }> | undefined;
+}
+const accProfileCache = globalThis._accountProfileCache ?? {};
+if (typeof globalThis !== 'undefined') globalThis._accountProfileCache = accProfileCache;
+
 /**
  * Returns account profile for display on Settings > Account.
  * Uses the login provider (Facebook/Google) to show correct name, email, image.
@@ -44,20 +51,29 @@ export async function GET() {
       if (teamMember?.facebookName) displayName = teamMember.facebookName;
       if (teamMember?.facebookEmail) displayEmail = teamMember.facebookEmail;
 
-      const fbAccount = user.accounts.find((a) => a.provider === 'facebook');
-      if (fbAccount?.access_token) {
-        try {
-          const res = await fetch(
-            `https://graph.facebook.com/me?fields=name,email,picture&access_token=${fbAccount.access_token}`
-          );
-          if (res.ok) {
-            const fb = await res.json();
-            if (fb.name) displayName = fb.name;
-            if (fb.email) displayEmail = fb.email;
-            if (fb.picture?.data?.url) displayImage = fb.picture.data.url;
+      const cacheKey = `fb_${user.id}`;
+      const cached = accProfileCache[cacheKey] && Date.now() - accProfileCache[cacheKey].ts < ACCOUNT_PROFILE_CACHE_TTL;
+      if (cached) {
+        displayName = accProfileCache[cacheKey].name;
+        displayEmail = accProfileCache[cacheKey].email;
+        displayImage = accProfileCache[cacheKey].picture;
+      } else {
+        const fbAccount = user.accounts.find((a) => a.provider === 'facebook');
+        if (fbAccount?.access_token) {
+          try {
+            const res = await fetch(
+              `https://graph.facebook.com/me?fields=name,email,picture&access_token=${fbAccount.access_token}`
+            );
+            if (res.ok) {
+              const fb = await res.json();
+              if (fb.name) displayName = fb.name;
+              if (fb.email) displayEmail = fb.email;
+              if (fb.picture?.data?.url) displayImage = fb.picture.data.url;
+              accProfileCache[cacheKey] = { name: displayName, email: displayEmail, picture: displayImage, ts: Date.now() };
+            }
+          } catch {
+            // Use TeamMember/User fallbacks above
           }
-        } catch {
-          // Use TeamMember/User fallbacks above
         }
       }
     } else if (primaryProvider === 'google') {

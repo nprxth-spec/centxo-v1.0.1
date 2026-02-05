@@ -23,12 +23,16 @@ const redis = redisRestUrl && redisRestToken
   })
   : null;
 
+// In-memory fallback when Redis not configured (e.g. localhost)
+const memoryCache = new Map<string, { value: unknown; expires: number }>();
+const MEMORY_TTL_SEC = 120; // 2 min for in-memory fallback
+
 // Log Redis connection status on initialization
 if (typeof window === 'undefined') { // Only in server-side
   if (redis) {
     console.log('✅ [Redis Cache] Redis configured successfully');
   } else {
-    console.warn('⚠️ [Redis Cache] Redis NOT configured - caching disabled. Set UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN or STORAGE_REDIS_KV_REST_API_URL/STORAGE_REDIS_KV_REST_API_TOKEN');
+    console.warn('⚠️ [Redis Cache] Redis NOT configured - using in-memory fallback (2 min TTL)');
   }
 }
 
@@ -56,21 +60,25 @@ export function generateCacheKey(prefix: string, ...parts: (string | number)[]):
  * Get cached data
  */
 export async function getCached<T>(key: string): Promise<T | null> {
-  if (!redis) {
-    console.warn('Redis not configured, skipping cache');
+  if (redis) {
+    try {
+      const data = await redis.get<T>(key);
+      if (data) {
+        console.log(`[Cache HIT] ${key}`);
+        return data;
+      }
+    } catch (error) {
+      console.error(`[Cache Error] Failed to get ${key}:`, error);
+    }
     return null;
   }
 
-  try {
-    const data = await redis.get<T>(key);
-    if (data) {
-      console.log(`[Cache HIT] ${key}`);
-    }
-    return data;
-  } catch (error) {
-    console.error(`[Cache Error] Failed to get ${key}:`, error);
-    return null;
+  const mem = memoryCache.get(key);
+  if (mem && mem.expires > Date.now()) {
+    return mem.value as T;
   }
+  if (mem) memoryCache.delete(key);
+  return null;
 }
 
 /**
@@ -81,19 +89,20 @@ export async function setCache<T>(
   value: T,
   ttl: number = CacheTTL.CAMPAIGNS_LIST
 ): Promise<boolean> {
-  if (!redis) {
-    console.warn('Redis not configured, skipping cache set');
-    return false;
+  if (redis) {
+    try {
+      await redis.set(key, value, { ex: ttl });
+      console.log(`[Cache SET] ${key} (TTL: ${ttl}s)`);
+      return true;
+    } catch (error) {
+      console.error(`[Cache Error] Failed to set ${key}:`, error);
+      return false;
+    }
   }
 
-  try {
-    await redis.set(key, value, { ex: ttl });
-    console.log(`[Cache SET] ${key} (TTL: ${ttl}s)`);
-    return true;
-  } catch (error) {
-    console.error(`[Cache Error] Failed to set ${key}:`, error);
-    return false;
-  }
+  const ttlMs = Math.min(ttl, MEMORY_TTL_SEC) * 1000;
+  memoryCache.set(key, { value, expires: Date.now() + ttlMs });
+  return true;
 }
 
 /**

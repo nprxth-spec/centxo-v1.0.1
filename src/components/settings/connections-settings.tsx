@@ -140,7 +140,7 @@ export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () =>
             setTeamData(team?.host ? team : null);
 
             if (profile?.name && profile?.userId) {
-                const imageUrl = profile.pictureUrl || `https://graph.facebook.com/${profile.userId}/picture?type=large&width=200&height=200`;
+                const imageUrl = profile.pictureUrl || `/api/facebook/profile-picture?userId=${encodeURIComponent(profile.userId)}`;
                 setMainFacebookProfile({ name: profile.name, image: imageUrl });
             } else if (session?.user?.email && team?.members) {
                 const userFacebookAccount = team.members.find(
@@ -150,7 +150,7 @@ export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () =>
                     setMainFacebookProfile({
                         name: userFacebookAccount.facebookName || 'Facebook User',
                         image: userFacebookAccount.facebookUserId
-                            ? `https://graph.facebook.com/${userFacebookAccount.facebookUserId}/picture?type=normal`
+                            ? `/api/facebook/profile-picture?userId=${encodeURIComponent(userFacebookAccount.facebookUserId)}`
                             : ''
                     });
                 }

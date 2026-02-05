@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { decryptToken } from '@/lib/services/metaClient';
 
 // Cache to reduce Meta API calls (gr:get:User per member - heavily used)
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL = 60 * 60 * 1000; // 60 min
 declare global {
   var _facebookPicturesCache: Record<string, { data: any; timestamp: number }> | undefined;
 }

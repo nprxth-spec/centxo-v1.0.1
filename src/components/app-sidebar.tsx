@@ -20,6 +20,7 @@ import {
     FileSpreadsheet,
     CreditCard,
     MessageCircle,
+    MessageSquare,
 } from 'lucide-react';
 import {
     AlertDialog,
@@ -89,9 +90,10 @@ const navStructure: NavGroup[] = [
                 iconClass: "text-fuchsia-500",
                 translationKey: 'nav.adsManager',
                 children: [
-                    { name: "Accounts", href: "/ads-manager/accounts-vcid", icon: Users, iconClass: "text-indigo-500", translationKey: 'adsManager.accounts', isChild: true },
+                    { name: "Accounts", href: "/ads-manager/accounts", icon: Users, iconClass: "text-indigo-500", translationKey: 'adsManager.accounts', isChild: true },
                     { name: "Campaigns", href: "/ads-manager/campaigns", icon: LayoutDashboard, iconClass: "text-blue-500", translationKey: 'adsManager.campaigns', isChild: true },
                     { name: "AdBox Inbox", href: "/adbox", icon: MessageCircle, iconClass: "text-emerald-500", translationKey: 'nav.adbox', isChild: true },
+                    { name: "Manage Comments", href: "/ads-manager/page-posts", icon: MessageSquare, iconClass: "text-orange-500", translationKey: 'nav.manageComments', isChild: true },
                     { name: "Google Sheets Export", href: "/ads-manager/google-sheets-export", icon: FileSpreadsheet, iconClass: "text-green-500", translationKey: 'nav.googleSheetsExport', isChild: true },
                 ]
             },

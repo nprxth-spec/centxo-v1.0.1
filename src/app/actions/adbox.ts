@@ -59,7 +59,7 @@ export async function getAdboxAccessToken(): Promise<string | null> {
   return null;
 }
 
-const PAGES_CACHE_TTL = 30 * 60 * 1000; // 30 min - reduce gr:get:User/accounts
+const PAGES_CACHE_TTL = 60 * 60 * 1000; // 60 min - reduce gr:get:User/accounts
 declare global {
   var _adboxPagesCache: Record<string, { data: unknown[]; timestamp: number }> | undefined;
 }
@@ -100,7 +100,17 @@ export async function fetchConversationsFromDB(pageIds: string[]) {
 
   try {
     const conversations = await adboxDb.findConversationsWithMessages(pageIds, 100);
-    return conversations.map((c) => {
+    const byKey = new Map<string, { c: typeof conversations[0]; lastMessageAt: Date }>();
+    for (const c of conversations) {
+      const pid = c.participantId || (c.messages[0] as { senderId?: string } | undefined)?.senderId || '';
+      const key = `${c.pageId}:${pid}`;
+      const existing = byKey.get(key);
+      const lastAt = c.lastMessageAt instanceof Date ? c.lastMessageAt : new Date(c.lastMessageAt);
+      if (!existing || lastAt.getTime() > existing.lastMessageAt.getTime()) {
+        byKey.set(key, { c, lastMessageAt: lastAt });
+      }
+    }
+    return Array.from(byKey.values()).map(({ c }) => {
       let participantName = c.participantName || 'Facebook User';
       let participantId = c.participantId;
 

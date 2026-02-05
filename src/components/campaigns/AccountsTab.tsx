@@ -274,12 +274,13 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
                     const spendingCap = rawSpendCap != null ? fromBasicUnits(rawSpendCap, currency) : null;
                     const spentAmount = rawSpentAmount != null ? fromBasicUnits(rawSpentAmount, currency) : null;
 
+                    const ctx = acc as { business_name?: string; business_profile_picture_uri?: string };
                     return {
                         id: acc.id,
-                        name: fbAccount?.name || acc.name, // Use Facebook API name (most recent), fallback to context name
+                        name: fbAccount?.name || acc.name || '-',
                         account_id: acc.account_id,
-                        businessName: fbAccount?.business_name || '-',
-                        businessProfilePictureUri: fbAccount?.business_profile_picture_uri,
+                        businessName: fbAccount?.business_name || ctx.business_name || '-',
+                        businessProfilePictureUri: fbAccount?.business_profile_picture_uri ?? ctx.business_profile_picture_uri,
                         status: fbAccount?.account_status ?? 'UNKNOWN',
                         disable_reason: fbAccount?.disable_reason,
                         activeAds: fbAccount?.ads?.summary?.total_count || 0,
@@ -328,7 +329,7 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
         // If selectedAccounts changes, DO NOT fetch (unless it's the very first load).
 
         if (isInitialLoad) {
-            fetchAccounts().finally(() => setHasInitialFetch(true));
+            fetchAccounts(true).finally(() => setHasInitialFetch(true)); // Force refresh to get current Business/Account names
         }
     }, [selectedAccounts, session]); // Dependencies for Initial Load checking
 
