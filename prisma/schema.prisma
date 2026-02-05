@@ -32,6 +32,9 @@ model User {
   subscriptionId     String?
   currentPeriodEnd   DateTime?
 
+  // AdBox - Facebook Messenger Inbox (pages, messaging)
+  facebookPageToken  String?   @db.Text
+
   sessions           Session[]
   iceBreakerTemplates IceBreakerTemplate[]
   automationRules    AutomationRule[]
@@ -365,4 +368,66 @@ model InterestAudiencePreset {
   updatedAt   DateTime @updatedAt
 
   @@index([userId])
+}
+
+// =============================================
+// AdBox - Facebook Messenger Inbox
+// =============================================
+
+model Conversation {
+  id             String    @id // Facebook Conversation ID
+  pageId         String
+  updatedAt      DateTime  @updatedAt
+  lastMessageAt  DateTime  @default(now())
+  snippet        String?   @db.Text
+  unreadCount    Int       @default(0)
+  lastReadAt     DateTime?
+  participantId  String?
+  participantName String?
+  facebookLink   String?   @db.Text
+  adId           String?
+  adName         String?
+  assigneeId     String?
+  viewedBy       String?
+  viewedByName   String?
+  viewedAt       DateTime?
+  messages       Message[]
+
+  @@index([pageId])
+  @@index([adId])
+  @@index([lastMessageAt])
+  @@index([assigneeId])
+}
+
+model Message {
+  id             String       @id // Facebook Message ID
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  senderName     String?
+  content        String?      @db.Text
+  attachments    String?      @db.Text // JSON
+  stickerUrl     String?      @db.Text
+  createdAt      DateTime
+  isFromPage     Boolean      @default(false)
+
+  @@index([conversationId])
+}
+
+model PageSettings {
+  id                     String   @id @default(cuid())
+  pageId                 String   @unique
+  rotationMode           String   @default("OFF")
+  distributionMethod     String   @default("EQUAL")
+  keepAssignment         Boolean  @default(false)
+  shuffleUsers           Boolean  @default(false)
+  maxUsersPerChat        Int      @default(1)
+  activeRotationUserIds  String?  @db.Text // JSON
+  transferIfUnreadMinutes Int?
+  transferIfOffline      Boolean  @default(false)
+  unreadLimitPerUser     Int?
+  rotationSchedule       String   @default("ALWAYS")
+  nonSelectedCanViewAll  Boolean  @default(false)
+  assignToNonSelected    String?
+  updatedAt              DateTime @updatedAt
 }

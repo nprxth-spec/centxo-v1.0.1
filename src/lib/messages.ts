@@ -20,6 +20,26 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'nav.reportTools': 'Report Tools',
     'nav.googleSheetsExport': 'Google Sheets Export',
     'nav.settings': 'Settings',
+    'nav.adbox': 'AdBox Inbox',
+
+    // AdBox Inbox
+    'adbox.chat': 'Chat',
+    'adbox.search': 'Search messages...',
+    'adbox.all': 'All',
+    'adbox.unread': 'Unread',
+    'adbox.read': 'Read',
+    'adbox.selectPages': 'Select Pages',
+    'adbox.choosePages': 'Choose which pages you want to see messages from',
+    'adbox.pagesAvailable': 'Pages Available',
+    'adbox.selectAll': 'Select All',
+    'adbox.deselectAll': 'Deselect All',
+    'adbox.cancel': 'Cancel',
+    'adbox.applyChanges': 'Apply Changes',
+    'adbox.typeMessage': 'Type a message...',
+    'adbox.newMessage': 'New Message',
+    'adbox.selectConversation': 'Select a conversation',
+    'adbox.connectFacebook': 'Connect Facebook to use AdBox',
+    'adbox.connectDescription': 'Connect your Facebook account in Settings to view and reply to messages from your Pages.',
 
     // Report Tools
     'reportTools.title': 'Report Tools',
@@ -1212,6 +1232,26 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'nav.reportTools': 'เครื่องมือรายงาน',
     'nav.googleSheetsExport': 'ส่งออก Google Sheets',
     'nav.settings': 'ตั้งค่า',
+    'nav.adbox': 'AdBox Inbox',
+
+    // AdBox Inbox
+    'adbox.chat': 'แชท',
+    'adbox.search': 'ค้นหาข้อความ...',
+    'adbox.all': 'ทั้งหมด',
+    'adbox.unread': 'ยังไม่ได้อ่าน',
+    'adbox.read': 'อ่านแล้ว',
+    'adbox.selectPages': 'เลือกเพจ',
+    'adbox.choosePages': 'เลือกเพจที่คุณต้องการดูข้อความ',
+    'adbox.pagesAvailable': 'เพจที่มี',
+    'adbox.selectAll': 'เลือกทั้งหมด',
+    'adbox.deselectAll': 'ยกเลิกทั้งหมด',
+    'adbox.cancel': 'ยกเลิก',
+    'adbox.applyChanges': 'ใช้การเปลี่ยนแปลง',
+    'adbox.typeMessage': 'พิมพ์ข้อความ...',
+    'adbox.newMessage': 'ข้อความใหม่',
+    'adbox.selectConversation': 'เลือกการสนทนา',
+    'adbox.connectFacebook': 'เชื่อมต่อ Facebook เพื่อใช้ AdBox',
+    'adbox.connectDescription': 'เชื่อมต่อบัญชี Facebook ในตั้งค่าเพื่อดูและตอบข้อความจากเพจของคุณ',
 
     // Report Tools
     'reportTools.title': 'เครื่องมือรายงาน',

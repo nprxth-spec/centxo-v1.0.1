@@ -38,7 +38,7 @@ export async function middleware(req: NextRequest) {
 
     // 3. Protected App Routes (/dashboard, etc)
     // Matches config.matcher excluding admin
-    const appProtectedPaths = ["/dashboard", "/settings", "/launch", "/create-ads", "/ads-manager", "/tools"];
+    const appProtectedPaths = ["/dashboard", "/settings", "/launch", "/create-ads", "/ads-manager", "/adbox-v", "/tools"];
     if (appProtectedPaths.some(path => pathname.startsWith(path))) {
         if (!isAuth) {
             const url = new URL("/login", req.url);
@@ -57,6 +57,8 @@ export const config = {
         "/launch/:path*",
         "/create-ads/:path*",
         "/ads-manager/:path*",
+        "/adbox-v/:path*",
+        "/adbox-v",
         "/tools/:path*",
         "/admin/:path*"
     ],
