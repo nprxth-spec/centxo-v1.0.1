@@ -384,7 +384,7 @@ export default function AudiencesPage() {
       }
     };
     const results = await Promise.all(adAccountIds.map(runOne));
-    totalSuccess = results.reduce((a, b) => a + b, 0);
+    totalSuccess = results.reduce<number>((a, b) => a + b, 0);
     if (totalSuccess > 0) {
       toast({ title: `${t('audiences.created')} ${totalSuccess}`, variant: 'default' });
       setAudienceName('');
@@ -429,7 +429,7 @@ export default function AudiencesPage() {
       }
     };
     const results = await Promise.all(adAccountIds.map(runOne));
-    const totalSuccess = results.reduce((a, b) => a + b, 0);
+    const totalSuccess = results.reduce<number>((a, b) => a + b, 0);
     if (totalSuccess > 0) {
       toast({ title: `${t('audiences.lookalikeCreatedSuccess')} ${totalSuccess}`, variant: 'default' });
       setLookalikeName('');
