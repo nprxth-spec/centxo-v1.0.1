@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
                 }
                 // If Facebook member, construct Graph API image URL
                 else if (member.memberType === 'facebook' && member.facebookUserId) {
-                    memberImage = `https://graph.facebook.com/${member.facebookUserId}/picture?type=square`;
+                    memberImage = `/api/facebook/profile-picture?userId=${encodeURIComponent(member.facebookUserId)}`;
                 }
 
                 return {

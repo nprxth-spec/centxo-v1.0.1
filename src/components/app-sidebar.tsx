@@ -91,7 +91,7 @@ const navStructure: NavGroup[] = [
                 children: [
                     { name: "Accounts", href: "/ads-manager/accounts-vcid", icon: Users, iconClass: "text-indigo-500", translationKey: 'adsManager.accounts', isChild: true },
                     { name: "Campaigns", href: "/ads-manager/campaigns", icon: LayoutDashboard, iconClass: "text-blue-500", translationKey: 'adsManager.campaigns', isChild: true },
-                    { name: "AdBox Inbox", href: "/adbox-v", icon: MessageCircle, iconClass: "text-emerald-500", translationKey: 'nav.adbox', isChild: true },
+                    { name: "AdBox Inbox", href: "/adbox", icon: MessageCircle, iconClass: "text-emerald-500", translationKey: 'nav.adbox', isChild: true },
                     { name: "Google Sheets Export", href: "/ads-manager/google-sheets-export", icon: FileSpreadsheet, iconClass: "text-green-500", translationKey: 'nav.googleSheetsExport', isChild: true },
                 ]
             },

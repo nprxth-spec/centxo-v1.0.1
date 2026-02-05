@@ -4,8 +4,15 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { decryptToken } from '@/lib/services/metaClient';
 
+const CACHE_TTL = 60 * 60 * 1000; // 1 hr - reduce gr:get:User/picture
+declare global {
+  var _profilePictureCache: Record<string, { buffer: ArrayBuffer; contentType: string; timestamp: number }> | undefined;
+}
+const picCache = globalThis._profilePictureCache ?? {};
+if (typeof globalThis !== 'undefined') globalThis._profilePictureCache = picCache;
+
 /**
- * Proxy for Facebook profile pictures - fetches server-side to avoid CORS/referrer issues.
+ * Proxy for Facebook profile pictures - fetches server-side, caches to reduce quota.
  * GET /api/facebook/profile-picture?userId=FB_USER_ID
  */
 export async function GET(req: NextRequest) {
@@ -80,6 +87,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'No access' }, { status: 403 });
     }
 
+    const cacheKey = `pp_${userId}`;
+    const cached = picCache[cacheKey];
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return new NextResponse(cached.buffer, {
+        headers: { 'Content-Type': cached.contentType, 'Cache-Control': 'public, max-age=86400' },
+      });
+    }
+
     const graphRes = await fetch(
       `https://graph.facebook.com/v22.0/${userId}?fields=picture.type(large)&access_token=${token}`
     );
@@ -97,12 +112,10 @@ export async function GET(req: NextRequest) {
 
     const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
     const buffer = await imgRes.arrayBuffer();
+    picCache[cacheKey] = { buffer, contentType, timestamp: Date.now() };
 
     return new NextResponse(buffer, {
-      headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=3600',
-      },
+      headers: { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=86400' },
     });
   } catch (error) {
     console.error('[profile-picture]', error);

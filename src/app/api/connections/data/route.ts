@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
           });
           memberImage = u?.image ?? null;
         } else if (m.memberType === 'facebook' && m.facebookUserId) {
-          memberImage = `https://graph.facebook.com/${m.facebookUserId}/picture?type=square`;
+          memberImage = `/api/facebook/profile-picture?userId=${encodeURIComponent(m.facebookUserId)}`;
         }
         return {
           id: m.id,
@@ -111,15 +111,35 @@ export async function GET(request: NextRequest) {
     );
 
     if (user.metaAccount && !members.some((m) => m.memberType === 'facebook' && m.facebookUserId === user.metaAccount?.metaUserId)) {
+      let fbName = user.name || 'Facebook Account';
+      let fbEmail = user.email;
+      try {
+        const fbAccount = await prisma.account.findFirst({
+          where: { userId: user.id, provider: 'facebook' },
+          select: { access_token: true },
+        });
+        if (fbAccount?.access_token) {
+          const res = await fetch(
+            `https://graph.facebook.com/me?fields=name,email&access_token=${fbAccount.access_token}`
+          );
+          if (res.ok) {
+            const fb = await res.json();
+            if (fb.name) fbName = fb.name;
+            if (fb.email) fbEmail = fb.email;
+          }
+        }
+      } catch {
+        // Use fallbacks above
+      }
       members.unshift({
         id: `meta-${user.metaAccount.id}`,
         memberType: 'facebook',
         facebookUserId: user.metaAccount.metaUserId,
-        facebookName: user.name || 'Facebook Account',
-        facebookEmail: user.email,
+        facebookName: fbName,
+        facebookEmail: fbEmail,
         memberEmail: null,
         memberName: null,
-        memberImage: `https://graph.facebook.com/${user.metaAccount.metaUserId}/picture?type=square`,
+        memberImage: `/api/facebook/profile-picture?userId=${encodeURIComponent(user.metaAccount.metaUserId)}`,
         role: 'MEMBER',
         addedAt: user.metaAccount.createdAt,
         lastUsedAt: user.metaAccount.updatedAt,

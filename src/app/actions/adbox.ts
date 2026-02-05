@@ -7,7 +7,7 @@ import { adboxDb } from '@/lib/adbox-db';
 import { getPages, getPageConversations, getConversationMessages, sendMessage } from '@/lib/facebook-adbox';
 import { decryptToken } from '@/lib/services/metaClient';
 
-async function getAdboxAccessToken(): Promise<string | null> {
+export async function getAdboxAccessToken(): Promise<string | null> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return null;
 
@@ -59,9 +59,22 @@ async function getAdboxAccessToken(): Promise<string | null> {
   return null;
 }
 
+const PAGES_CACHE_TTL = 30 * 60 * 1000; // 30 min - reduce gr:get:User/accounts
+declare global {
+  var _adboxPagesCache: Record<string, { data: unknown[]; timestamp: number }> | undefined;
+}
+const pagesCache = globalThis._adboxPagesCache ?? {};
+if (typeof globalThis !== 'undefined') globalThis._adboxPagesCache = pagesCache;
+
 export async function fetchPages() {
   const session = await getServerSession(authOptions);
-  if (!session?.user) throw new Error('Not authenticated');
+  if (!session?.user?.id) throw new Error('Not authenticated');
+
+  const cacheKey = `fp_${session.user.id}`;
+  const cached = pagesCache[cacheKey];
+  if (cached && Date.now() - cached.timestamp < PAGES_CACHE_TTL) {
+    return JSON.parse(JSON.stringify(cached.data));
+  }
 
   const accessToken = await getAdboxAccessToken();
   if (!accessToken) {
@@ -70,6 +83,7 @@ export async function fetchPages() {
 
   try {
     const pages = await getPages(accessToken);
+    pagesCache[cacheKey] = { data: pages, timestamp: Date.now() };
     return JSON.parse(JSON.stringify(pages));
   } catch (error: unknown) {
     console.error('Failed to fetch pages:', error);
@@ -297,18 +311,31 @@ export async function syncMessagesOnce(
       const atts = msg.attachments as { data?: Array<Record<string, unknown>> } | undefined;
       if (atts?.data?.length) {
         const attachments = atts.data.map((att: Record<string, unknown>) => {
-          const t = att.type;
-          const typeStr = typeof t === 'string' ? t : 'file';
+          const attAny = att as {
+            type?: string;
+            image_data?: { url?: string };
+            file_url?: string;
+            payload?: { url?: string };
+          };
+          let typeStr = typeof attAny.type === 'string' ? attAny.type.toLowerCase() : 'file';
           const url =
-            (att as { image_data?: { url?: string }; file_url?: string }).image_data?.url ||
-            (att as { file_url?: string }).file_url ||
+            attAny.image_data?.url ||
+            attAny.file_url ||
+            attAny.payload?.url ||
             null;
+          if (attAny.image_data?.url || (['image', 'photo'].includes(typeStr) && url))
+            typeStr = 'image';
           return { type: typeStr, url };
         });
         attachmentsJson = JSON.stringify(attachments);
         const sticker = attachments.find((a) => a.type === 'sticker');
+        const image = attachments.find((a) => (a.type === 'image' || a.type === 'photo') && a.url);
         if (sticker) stickerUrl = sticker.url || null;
-        if (!messageContent) messageContent = '[Sticker]';
+        if (!messageContent) {
+          if (sticker) messageContent = '[Sticker]';
+          else if (image?.url) messageContent = '[Image]';
+          else messageContent = '[Attachment]';
+        }
       }
 
       if (msg.sticker) {

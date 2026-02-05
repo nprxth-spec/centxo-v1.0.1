@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -13,21 +12,12 @@ import {
   Settings,
   Send,
   Bell,
-  BellOff,
-  Ban,
-  Image,
-  FileText,
   Mail,
   User,
-  Plus,
   Megaphone,
   X,
-  Bookmark,
   Link2,
-  AlertTriangle,
   ExternalLink,
-  Calendar,
-  ChevronRight,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -78,7 +68,7 @@ const createNotificationSound = () => {
   };
 };
 
-export default function AdBoxVPage() {
+export default function AdBoxPage() {
   const { t } = useLanguage();
   const { notificationsEnabled, soundEnabled } = useAppSettings();
 
@@ -104,7 +94,6 @@ export default function AdBoxVPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showDetailPanel, setShowDetailPanel] = useState(true);
   const [detailTab, setDetailTab] = useState('info');
-  const [customerNote, setCustomerNote] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'unread' | 'read'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isInitialized, setIsInitialized] = useState(false);
@@ -213,7 +202,6 @@ export default function AdBoxVPage() {
     if (isDialogOpen) setTempSelectedPageIds(selectedPageIds);
   }, [isDialogOpen, selectedPageIds]);
 
-  // Poll for new messages
   useEffect(() => {
     if (selectedPageIds.length === 0 || !isInitialized || !hasToken) return;
     let isActive = true;
@@ -241,6 +229,23 @@ export default function AdBoxVPage() {
               );
               setToastMessage(`${first.senderName}: ${(first.content || '').toString().slice(0, 50)}`);
               setTimeout(() => setToastMessage(null), 5000);
+              const cur = selectedConversationRef.current;
+              const convId = cur?.id as string | undefined;
+              const pageId = cur?.pageId as string | undefined;
+              const participantId = (cur?.participants as { data?: { id?: string }[] })?.data?.[0]?.id;
+              const belongsToOpenChat = convId && newMsgs.some(
+                (m: { conversationId?: string; pageId?: string; senderId?: string }) =>
+                  m.conversationId === convId ||
+                  (pageId && participantId && m.pageId === pageId && m.senderId === participantId)
+              );
+              if (belongsToOpenChat && convId) {
+                fetchMessagesFromDB(convId).then((fresh) => {
+                  if (currentConversationIdRef.current === convId) {
+                    setMessages(fresh);
+                    setMessageCache((prev) => ({ ...prev, [convId]: fresh }));
+                  }
+                });
+              }
             }
           }
           if (data.updatedConversations?.length > 0) {
@@ -265,7 +270,7 @@ export default function AdBoxVPage() {
           }
         }
       } catch {}
-      if (isActive) setTimeout(poll, 3000);
+      if (isActive) setTimeout(poll, 1500);
     };
     poll();
     return () => {
@@ -495,6 +500,11 @@ export default function AdBoxVPage() {
       new Date((a.updated_time as string) || 0).getTime()
   );
 
+  const getParticipantPictureUrl = (participantId?: string, pageId?: string) => {
+    if (!participantId || !pageId) return null;
+    return `/api/adbox/participant-picture?participantId=${encodeURIComponent(participantId)}&pageId=${encodeURIComponent(pageId)}`;
+  };
+
   return (
     <div className="h-[calc(100vh-5.5rem)] flex flex-col px-4 md:px-8 pt-2 pb-0">
       {toastMessage && (
@@ -507,9 +517,8 @@ export default function AdBoxVPage() {
         </div>
       )}
 
-      <div className="flex-1 flex flex-row gap-3 overflow-hidden">
-        {/* Left: Conversation list */}
-        <Card className="w-full max-w-[380px] flex-shrink-0 flex flex-col rounded-2xl overflow-hidden">
+      <div className="flex-1 flex flex-row overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <div className="w-full max-w-[380px] flex-shrink-0 flex flex-col border-r overflow-hidden">
           <div className="px-3 py-2 border-b flex items-center justify-between">
             <span className="text-sm font-medium">{t('adbox.chat')}</span>
             <div className="flex gap-1">
@@ -625,6 +634,9 @@ export default function AdBoxVPage() {
                 const isSelected = selectedConversation?.id === conv.id;
                 const participant = (conv.participants as { data?: { id?: string; name?: string }[] })
                   ?.data?.[0];
+                const fallbackUrl = getFallbackAvatar(participant?.name || 'U');
+                const showRealPicture = isSelected && participant?.id && conv.pageId;
+                const pictureUrl = showRealPicture ? getParticipantPictureUrl(participant.id, conv.pageId as string) : null;
 
                 return (
                   <div
@@ -644,11 +656,10 @@ export default function AdBoxVPage() {
                     <div className="relative">
                       <Avatar className="h-12 w-12">
                         <AvatarImage
-                          src={getFallbackAvatar(participant?.name || 'U')}
+                          src={pictureUrl || fallbackUrl}
                           onError={(e) => {
-                            (e.target as HTMLImageElement).src = getFallbackAvatar(
-                              participant?.name || 'U'
-                            );
+                            const el = e.target as HTMLImageElement;
+                            if (el.src !== fallbackUrl) el.src = fallbackUrl;
                           }}
                         />
                         <AvatarFallback>{(participant?.name || 'U').charAt(0).toUpperCase()}</AvatarFallback>
@@ -679,20 +690,28 @@ export default function AdBoxVPage() {
               })
             )}
           </ScrollArea>
-        </Card>
+        </div>
 
-        {/* Middle: Chat */}
-        <Card className="flex-1 flex flex-col min-w-0 rounded-2xl overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {selectedConversation ? (
             <>
               <div className="px-4 py-3 border-b flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-10 w-10">
                     <AvatarImage
-                      src={getFallbackAvatar(
+                      src={getParticipantPictureUrl(
+                        (selectedConversation.participants as { data?: { id?: string }[] })?.data?.[0]?.id,
+                        selectedConversation.pageId as string
+                      ) || getFallbackAvatar(
                         (selectedConversation.participants as { data?: { name?: string }[] })?.data?.[0]
                           ?.name || 'U'
                       )}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = getFallbackAvatar(
+                          (selectedConversation.participants as { data?: { name?: string }[] })?.data?.[0]
+                            ?.name || 'U'
+                        );
+                      }}
                     />
                     <AvatarFallback>
                       {(selectedConversation.participants as { data?: { name?: string }[] })?.data?.[0]
@@ -735,30 +754,77 @@ export default function AdBoxVPage() {
                 ) : messages.length > 0 ? (
                   <>
                     {messages.map((msg) => {
-                      const isMe =
+                      const isFromUs =
                         (msg.from as { id?: string })?.id === selectedConversation.pageId;
+                      const content = msg.message as string;
+                      const stickerUrl = msg.stickerUrl as string | null | undefined;
+                      let attachments: { type?: string; url?: string }[] = [];
+                      try {
+                        if (msg.attachments && typeof msg.attachments === 'string') {
+                          attachments = JSON.parse(msg.attachments) || [];
+                        }
+                      } catch {}
+                      const imageAtts = attachments.filter((a) => {
+                        if (!a.url) return false;
+                        const t = (a.type || '').toLowerCase();
+                        return t === 'image' || t === 'photo' || (t !== 'sticker' && t !== 'video' && t !== 'audio');
+                      });
+                      const isPlaceholder = content === '[Sticker]' || content === '[Image]' || content === '[Attachment]';
+                      const timeStr = (() => {
+                        const d = new Date((msg.created_time as string) || 0);
+                        if (isNaN(d.getTime())) return '';
+                        return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+                      })();
+
                       return (
                         <div
                           key={msg.id as string}
-                          className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                          className={`group flex items-start gap-2 ${isFromUs ? 'justify-end' : 'justify-start'}`}
                         >
                           <div
-                            className={`max-w-[70%] px-4 py-2 rounded-2xl text-sm ${
-                              isMe
-                                ? 'bg-primary text-primary-foreground rounded-br-none'
-                                : 'bg-background shadow rounded-bl-none'
-                            }`}
+                            className="flex max-w-[85%] items-end gap-2 flex-row"
                           >
-                            {msg.message as string}
                             <div
-                              className={`text-[10px] mt-1 text-right ${
-                                isMe ? 'opacity-80' : 'text-muted-foreground'
+                              className={`px-4 py-2 rounded-2xl text-sm ${
+                                isFromUs
+                                  ? 'bg-primary text-primary-foreground rounded-br-none'
+                                  : 'bg-background shadow rounded-bl-none'
                               }`}
                             >
-                              {new Date(
-                                (msg.created_time as string) || 0
-                              ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {stickerUrl ? (
+                                <img
+                                  src={stickerUrl}
+                                  alt="Sticker"
+                                  className="max-w-[120px] max-h-[120px] object-contain"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : imageAtts.length > 0 ? (
+                                <div className="space-y-2">
+                                  {imageAtts.map((att, i) => (
+                                    <img
+                                      key={i}
+                                      src={att.url}
+                                      alt=""
+                                      className="max-w-full max-h-[240px] rounded-lg object-contain"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  ))}
+                                </div>
+                              ) : null}
+                              {(!isPlaceholder || (!stickerUrl && imageAtts.length === 0)) && content ? (
+                                <span className={stickerUrl || imageAtts.length ? 'block mt-2' : ''}>
+                                  {content}
+                                </span>
+                              ) : null}
                             </div>
+                            {timeStr && (
+                              <span
+                                title={timeStr}
+                                className="text-[11px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shrink-0"
+                              >
+                                {timeStr}
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
@@ -813,11 +879,10 @@ export default function AdBoxVPage() {
               </p>
             </div>
           )}
-        </Card>
+        </div>
 
-        {/* Right: Detail panel (simplified) */}
         {selectedConversation && showDetailPanel && (
-          <Card className="w-[280px] flex-shrink-0 flex flex-col rounded-2xl overflow-hidden">
+          <div className="w-[280px] flex-shrink-0 flex flex-col border-l overflow-hidden">
             <div className="flex border-b">
               <button
                 className={`flex-1 py-3 text-sm font-medium ${detailTab === 'info' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'}`}
@@ -845,6 +910,15 @@ export default function AdBoxVPage() {
                 <>
                   <div className="text-center">
                     <Avatar className="h-16 w-16 mx-auto mb-2">
+                      <AvatarImage
+                        src={getParticipantPictureUrl(
+                          (selectedConversation.participants as { data?: { id?: string }[] })?.data?.[0]?.id,
+                          selectedConversation.pageId as string
+                        ) ?? undefined}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
                       <AvatarFallback className="text-lg">
                         {(selectedConversation.participants as { data?: { name?: string }[] })
                           ?.data?.[0]
@@ -895,12 +969,28 @@ export default function AdBoxVPage() {
                 </>
               )}
               {detailTab === 'info' && (
-                <div className="text-center text-muted-foreground text-sm">
-                  <p>Notes and orders coming soon</p>
+                <div className="space-y-4 text-sm">
+                  {(selectedConversation.adId as string) && (
+                    <div className="flex items-center gap-2">
+                      <Megaphone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <div>
+                        <p className="font-medium text-foreground">Ad ID</p>
+                        <p className="text-muted-foreground text-xs font-mono">
+                          {selectedConversation.adId as string}
+                        </p>
+                        <p className="text-muted-foreground text-xs mt-1">
+                          Customer messaged from an ad
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="text-center text-muted-foreground text-sm">
+                    <p>Notes and orders coming soon</p>
+                  </div>
                 </div>
               )}
             </div>
-          </Card>
+          </div>
         )}
       </div>
     </div>

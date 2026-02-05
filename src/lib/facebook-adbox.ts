@@ -111,7 +111,7 @@ export async function getConversationMessages(
   }
 
   let allMessages: Array<Record<string, unknown>> = [];
-  let url: string | null = `https://graph.facebook.com/v22.0/${conversationId}/messages?fields=message,from,created_time,attachments,sticker&limit=20&access_token=${token}`;
+  let url: string | null = `https://graph.facebook.com/v22.0/${conversationId}/messages?fields=message,from,created_time,attachments{type,image_data,file_url,payload},sticker&limit=20&access_token=${token}`;
   let pageCount = 0;
   const maxPages = 25; // ~500 messages
 

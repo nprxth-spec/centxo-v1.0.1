@@ -36,9 +36,14 @@ export async function middleware(req: NextRequest) {
         return NextResponse.next();
     }
 
+    // Redirect old adbox-v to adbox
+    if (pathname === "/adbox-v" || pathname.startsWith("/adbox-v/")) {
+        return NextResponse.redirect(new URL(pathname.replace("/adbox-v", "/adbox"), req.url));
+    }
+
     // 3. Protected App Routes (/dashboard, etc)
     // Matches config.matcher excluding admin
-    const appProtectedPaths = ["/dashboard", "/settings", "/launch", "/create-ads", "/ads-manager", "/adbox-v", "/tools"];
+    const appProtectedPaths = ["/dashboard", "/settings", "/launch", "/create-ads", "/ads-manager", "/adbox", "/tools"];
     if (appProtectedPaths.some(path => pathname.startsWith(path))) {
         if (!isAuth) {
             const url = new URL("/login", req.url);
@@ -57,8 +62,9 @@ export const config = {
         "/launch/:path*",
         "/create-ads/:path*",
         "/ads-manager/:path*",
-        "/adbox-v/:path*",
+        "/adbox/:path*",
         "/adbox-v",
+        "/adbox-v/:path*",
         "/tools/:path*",
         "/admin/:path*"
     ],

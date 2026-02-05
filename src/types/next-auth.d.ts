@@ -10,6 +10,7 @@ declare module 'next-auth' {
       role?: string;
     };
     accessToken?: string;
+    provider?: string;
   }
 
   interface User {
@@ -20,5 +21,6 @@ declare module 'next-auth' {
 declare module "next-auth/jwt" {
   interface JWT {
     role?: string;
+    provider?: string;
   }
 }

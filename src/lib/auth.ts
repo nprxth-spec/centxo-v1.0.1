@@ -171,24 +171,25 @@ export const authOptions: NextAuthOptions = {
 
     callbacks: {
         async signIn({ user, account, profile }) {
-            // Auto-create MetaAccount when user signs in with Facebook
-            if (account?.provider === 'facebook' && account?.access_token && user?.id) {
+            // Auto-create MetaAccount + TeamMember when user signs in with Facebook
+            if (account?.provider === 'facebook' && account?.access_token && user?.id && account.providerAccountId) {
                 try {
-                    // Check if MetaAccount already exists
+                    const fbProfile = profile as { id?: string; name?: string; email?: string } | undefined;
+                    const fbName = fbProfile?.name || user.name || 'Facebook User';
+                    const fbEmail = fbProfile?.email || user.email || undefined;
+
+                    // 1. Create/update MetaAccount
                     const existingMetaAccount = await prisma.metaAccount.findUnique({
                         where: { userId: user.id },
                     });
 
-                    if (!existingMetaAccount && account.providerAccountId) {
+                    if (!existingMetaAccount) {
                         try {
-                            // Dynamic import to avoid edge runtime issues if any (though auth.ts is usually safe)
                             const { encryptToken } = await import('@/lib/services/metaClient');
                             const encryptedToken = encryptToken(account.access_token);
-
-                            // Create MetaAccount
                             const expiresAt = account.expires_at
                                 ? new Date(account.expires_at * 1000)
-                                : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 60 days default
+                                : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
 
                             await prisma.metaAccount.create({
                                 data: {
@@ -198,13 +199,42 @@ export const authOptions: NextAuthOptions = {
                                     accessTokenExpires: expiresAt,
                                 },
                             });
-                            console.log('✅ Auto-created MetaAccount for user:', user.email);
+                            console.log('✅ Auto-created MetaAccount for user:', fbEmail || user.email);
                         } catch (err) {
                             console.error('Error encrypting/creating meta account', err);
                         }
                     }
+
+                    // 2. Create/update TeamMember so Facebook account shows in "Facebook Accounts"
+                    const expiresAt = account.expires_at
+                        ? new Date(account.expires_at * 1000)
+                        : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+
+                    await prisma.teamMember.upsert({
+                        where: { facebookUserId: account.providerAccountId },
+                        update: {
+                            userId: user.id,
+                            facebookName: fbName,
+                            facebookEmail: fbEmail ?? undefined,
+                            accessToken: account.access_token,
+                            accessTokenExpires: expiresAt,
+                            role: 'MEMBER',
+                            updatedAt: new Date(),
+                        },
+                        create: {
+                            userId: user.id,
+                            memberType: 'facebook',
+                            facebookUserId: account.providerAccountId,
+                            facebookName: fbName,
+                            facebookEmail: fbEmail ?? undefined,
+                            accessToken: account.access_token,
+                            accessTokenExpires: expiresAt,
+                            role: 'MEMBER',
+                        },
+                    });
+                    console.log('✅ Auto-added Facebook account to team:', fbName);
                 } catch (error) {
-                    console.error('Failed to auto-create MetaAccount:', error);
+                    console.error('Failed to auto-create MetaAccount/TeamMember:', error);
                 }
             }
             return true;
@@ -239,8 +269,12 @@ export const authOptions: NextAuthOptions = {
                 }
             }
 
-            // Store Facebook access token in JWT (optional, but good for performance if payload is small)
-            // Or rely on DB fetch in session callback. Let's keep it clean and rely on DB/Token if present.
+            // Store login provider so account page can show correct branding (Facebook vs Google)
+            if (account?.provider) {
+                token.provider = account.provider;
+            }
+
+            // Store Facebook access token in JWT
             if (account?.provider === 'facebook' && account?.access_token) {
                 token.accessToken = account.access_token;
             }
@@ -273,8 +307,8 @@ export const authOptions: NextAuthOptions = {
             if (session.user) {
                 session.user.id = token.id as string;
                 session.user.role = token.role as string;
-                // Pass sessionId to client for identification
                 (session as any).sessionId = token.sessionId;
+                session.provider = token.provider;
             }
 
             // Pass access token to session
