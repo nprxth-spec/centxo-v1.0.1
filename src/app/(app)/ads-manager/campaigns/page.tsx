@@ -39,6 +39,7 @@ import {
 import { ChevronDown } from "lucide-react";
 
 import { showCustomToast, showErrorToast, showWarningToast } from "@/utils/custom-toast";
+import { MetaQuotaClient } from '@/lib/meta-quota-config';
 import { ExportDialog } from "@/components/ExportDialog";
 import { cn } from "@/lib/utils";
 import { formatCurrencyByCode } from "@/lib/currency-utils";
@@ -220,7 +221,9 @@ export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [adSets, setAdSets] = useState<AdSet[]>([]);
   const [ads, setAds] = useState<Ad[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [campaignsLoading, setCampaignsLoading] = useState(true);
+  const [adsetsLoading, setAdsetsLoading] = useState(true);
+  const [adsLoading, setAdsLoading] = useState(true);
   const [error, setError] = useState('');
 
   // Local Account Selection for this view (will load from localStorage after mount)
@@ -324,6 +327,14 @@ export default function CampaignsPage() {
   const [budgetEditValue, setBudgetEditValue] = useState('');
   const [budgetEditType, setBudgetEditType] = useState<'daily' | 'lifetime'>('daily');
   const [budgetUpdating, setBudgetUpdating] = useState(false);
+
+  const PAGE_SIZE = 50;
+  const [campaignsPage, setCampaignsPage] = useState(1);
+  const [campaignsTotal, setCampaignsTotal] = useState(0);
+  const [adsetsPage, setAdsetsPage] = useState(1);
+  const [adsetsTotal, setAdsetsTotal] = useState(0);
+  const [adsPage, setAdsPage] = useState(1);
+  const [adsTotal, setAdsTotal] = useState(0);
 
   useEffect(() => {
     if (!isMounted) return;
@@ -995,43 +1006,44 @@ export default function CampaignsPage() {
   // Track last fetched accounts/date to prevent unnecessary API calls
   const lastFetchedAccountsRef = useRef<string>('');
   const lastFetchedDateRangeRef = useRef<string>('');
+  const lastFetchedStatusRef = useRef<string>('all');
   const isFetchingRef = useRef(false);
   const lastManualRefreshRef = useRef<number>(0);
-  const REFRESH_COOLDOWN = 5 * 60 * 1000; // 5 minutes - prevent unnecessary API calls when user clicks Refresh repeatedly
+  const REFRESH_COOLDOWN = MetaQuotaClient.CAMPAIGNS_REFRESH_COOLDOWN_MS; // from meta-quota-config (500+ users)
 
-  // Prefetch all tabs in parallel for instant tab switching (must be defined before useEffects that use it)
+  // Staged loading: campaigns first (show table fast), then adsets+ads in parallel
   const fetchAllTabsInParallel = useCallback(async (forceRefresh = false, silent = false) => {
     const targetIds = Array.from(viewSelectedAccountIds);
     if (targetIds.length === 0) return;
 
     const adAccountIds = targetIds.join(',');
-    const baseParams = (path: string) => {
+    const baseParams = (path: string, opts?: { limit?: number; offset?: number }) => {
       let url = `${path}?adAccountId=${adAccountIds}`;
       if (dateRange?.from && dateRange?.to) {
         url += `&dateFrom=${dateRange.from.toISOString()}&dateTo=${dateRange.to.toISOString()}`;
       }
       if (statusFilter && statusFilter !== 'all') url += `&status=${statusFilter}`;
       if (forceRefresh) url += '&refresh=true';
+      if (opts?.limit != null) url += `&limit=${opts.limit}`;
+      if (opts?.offset != null) url += `&offset=${opts.offset}`;
       return url;
     };
 
     if (!silent) {
-      setLoading(true);
+      setCampaignsLoading(true);
+      setAdsetsLoading(true);
+      setAdsLoading(true);
       setError('');
     }
 
     try {
-      const [campRes, adSetRes, adRes] = await Promise.all([
-        fetch(baseParams('/api/campaigns')),
-        fetch(baseParams('/api/adsets')),
-        fetch(baseParams('/api/ads')),
-      ]);
-
+      // Stage 1: Fetch campaigns first — show table ASAP (50 per page)
+      const offset = 0; // Initial load always page 1
+      const campRes = await fetch(baseParams('/api/campaigns', { limit: PAGE_SIZE, offset }));
       const campData = await campRes.json().catch(() => ({}));
-      const adSetData = await adSetRes.json().catch(() => ({}));
-      const adData = await adRes.json().catch(() => ({}));
 
       if (campRes.ok) {
+        setCampaignsTotal(campData.total ?? 0);
         const formatted = (campData.campaigns || []).map((c: any) => ({
           ...c,
           createdAt: c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '-',
@@ -1055,8 +1067,20 @@ export default function CampaignsPage() {
         }));
         setCampaigns(formatted);
       }
+      if (!silent) setCampaignsLoading(false);
+      if (!silent && !campRes.ok) setError(campData.error || 'Failed to fetch campaigns');
+
+      // Stage 2: Fetch adsets + ads in parallel (50 per page)
+      const [adSetRes, adRes] = await Promise.all([
+        fetch(baseParams('/api/adsets', { limit: PAGE_SIZE, offset: 0 })),
+        fetch(baseParams('/api/ads', { limit: PAGE_SIZE, offset: 0 })),
+      ]);
+
+      const adSetData = await adSetRes.json().catch(() => ({}));
+      const adData = await adRes.json().catch(() => ({}));
 
       if (adSetRes.ok) {
+        setAdsetsTotal(adSetData.total ?? 0);
         const formatted = (adSetData.adsets || []).map((a: any) => ({
           ...a,
           createdAt: a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '-',
@@ -1079,8 +1103,11 @@ export default function CampaignsPage() {
         }));
         setAdSets(formatted);
       }
+      if (!silent) setAdsetsLoading(false);
+      if (!silent && campRes.ok && !adSetRes.ok) setError(adSetData.error || 'Failed to fetch ad sets');
 
       if (adRes.ok) {
+        setAdsTotal(adData.total ?? 0);
         const formatted = (adData.ads || []).map((ad: any) => ({
           ...ad,
           createdAt: new Date(ad.createdAt).toLocaleDateString('en-US', {
@@ -1110,17 +1137,16 @@ export default function CampaignsPage() {
         }));
         setAds(formatted);
       }
-
-      if (!silent) {
-        if (!campRes.ok) setError(campData.error || 'Failed to fetch campaigns');
-        else if (!adSetRes.ok) setError(adSetData.error || 'Failed to fetch ad sets');
-        else if (!adRes.ok) setError(adData.error || 'Failed to fetch ads');
-      }
+      if (!silent) setAdsLoading(false);
+      if (!silent && campRes.ok && adSetRes.ok && !adRes.ok) setError(adData.error || 'Failed to fetch ads');
     } catch (err) {
       console.error('Error fetching campaigns data:', err);
-      if (!silent) setError(err instanceof Error ? err.message : 'Failed to load data');
-    } finally {
-      if (!silent) setLoading(false);
+      if (!silent) {
+        setError(err instanceof Error ? err.message : 'Failed to load data');
+        setCampaignsLoading(false);
+        setAdsetsLoading(false);
+        setAdsLoading(false);
+      }
     }
   }, [viewSelectedAccountIds, dateRange, statusFilter]);
 
@@ -1128,8 +1154,148 @@ export default function CampaignsPage() {
     const now = Date.now();
     const useCacheDueToCooldown = lastManualRefreshRef.current > 0 && (now - lastManualRefreshRef.current < REFRESH_COOLDOWN);
     if (!useCacheDueToCooldown) lastManualRefreshRef.current = now;
+    setCampaignsPage(1);
+    setAdsetsPage(1);
+    setAdsPage(1);
     await fetchAllTabsInParallel(!useCacheDueToCooldown);
   }, [fetchAllTabsInParallel]);
+
+  const fetchCampaignsForPage = useCallback(async (page: number) => {
+    const targetIds = Array.from(viewSelectedAccountIds);
+    if (targetIds.length === 0) return;
+    setCampaignsLoading(true);
+    try {
+      const adAccountIds = targetIds.join(',');
+      let url = `/api/campaigns?adAccountId=${adAccountIds}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`;
+      if (dateRange?.from && dateRange?.to) url += `&dateFrom=${dateRange.from.toISOString()}&dateTo=${dateRange.to.toISOString()}`;
+      if (statusFilter && statusFilter !== 'all') url += `&status=${statusFilter}`;
+      const res = await fetch(url);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setCampaignsTotal(data.total ?? 0);
+        const formatted = (data.campaigns || []).map((c: any) => ({
+          ...c,
+          createdAt: c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '-',
+          spend: c.metrics?.spend || 0,
+          messages: c.metrics?.messages || 0,
+          costPerMessage: c.metrics?.costPerMessage || 0,
+          results: c.metrics?.results || 0,
+          costPerResult: c.metrics?.costPerResult || 0,
+          budget: c.metrics?.budget || 0,
+          reach: c.metrics?.reach || 0,
+          impressions: c.metrics?.impressions || 0,
+          postEngagements: c.metrics?.postEngagements || 0,
+          clicks: c.metrics?.clicks || 0,
+          messagingContacts: c.metrics?.messagingContacts || 0,
+          amountSpent: c.metrics?.amountSpent || 0,
+          effectiveStatus: c.effectiveStatus,
+          configuredStatus: c.configuredStatus,
+          spendCap: c.spendCap,
+          issuesInfo: c.issuesInfo,
+          adSets: c.adSets || [],
+        }));
+        setCampaigns(formatted);
+      }
+    } finally {
+      setCampaignsLoading(false);
+    }
+  }, [viewSelectedAccountIds, dateRange, statusFilter]);
+
+  const handleCampaignsPageChange = useCallback((page: number) => {
+    setCampaignsPage(page);
+    fetchCampaignsForPage(page);
+  }, [fetchCampaignsForPage]);
+
+  const fetchAdSetsForPage = useCallback(async (page: number) => {
+    const targetIds = Array.from(viewSelectedAccountIds);
+    if (targetIds.length === 0) return;
+    setAdsetsLoading(true);
+    try {
+      const adAccountIds = targetIds.join(',');
+      let url = `/api/adsets?adAccountId=${adAccountIds}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`;
+      if (dateRange?.from && dateRange?.to) url += `&dateFrom=${dateRange.from.toISOString()}&dateTo=${dateRange.to.toISOString()}`;
+      if (statusFilter && statusFilter !== 'all') url += `&status=${statusFilter}`;
+      const res = await fetch(url);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setAdsetsTotal(data.total ?? 0);
+        const formatted = (data.adsets || []).map((a: any) => ({
+          ...a,
+          createdAt: a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '-',
+          spend: a.metrics?.spend || 0,
+          results: a.metrics?.results || 0,
+          costPerResult: a.metrics?.costPerResult || 0,
+          budget: (a.dailyBudget > 0 ? a.dailyBudget : a.lifetimeBudget) || 0,
+          reach: a.metrics?.reach || 0,
+          impressions: a.metrics?.impressions || 0,
+          postEngagements: a.metrics?.postEngagements || 0,
+          clicks: a.metrics?.clicks || 0,
+          messagingContacts: a.metrics?.messagingContacts || 0,
+          amountSpent: a.metrics?.amountSpent || 0,
+          effectiveStatus: a.effectiveStatus,
+          configuredStatus: a.configuredStatus,
+          issuesInfo: a.issuesInfo,
+          ads: a.ads || [],
+        }));
+        setAdSets(formatted);
+      }
+    } finally {
+      setAdsetsLoading(false);
+    }
+  }, [viewSelectedAccountIds, dateRange, statusFilter]);
+
+  const handleAdSetsPageChange = useCallback((page: number) => {
+    setAdsetsPage(page);
+    fetchAdSetsForPage(page);
+  }, [fetchAdSetsForPage]);
+
+  const fetchAdsForPage = useCallback(async (page: number) => {
+    const targetIds = Array.from(viewSelectedAccountIds);
+    if (targetIds.length === 0) return;
+    setAdsLoading(true);
+    try {
+      const adAccountIds = targetIds.join(',');
+      let url = `/api/ads?adAccountId=${adAccountIds}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`;
+      if (dateRange?.from && dateRange?.to) url += `&dateFrom=${dateRange.from.toISOString()}&dateTo=${dateRange.to.toISOString()}`;
+      if (statusFilter && statusFilter !== 'all') url += `&status=${statusFilter}`;
+      const res = await fetch(url);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setAdsTotal(data.total ?? 0);
+        const formatted = (data.ads || []).map((ad: any) => ({
+          ...ad,
+          createdAt: new Date(ad.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          postLink: ad.postLink,
+          amountSpent: ad.metrics?.amountSpent || 0,
+          results: ad.metrics?.results || 0,
+          costPerResult: ad.metrics?.costPerResult || 0,
+          budget: ad.budget || 0,
+          budgetSource: ad.budgetSource,
+          budgetType: ad.budgetType,
+          campaignDailyBudget: ad.campaignDailyBudget,
+          campaignLifetimeBudget: ad.campaignLifetimeBudget,
+          adsetDailyBudget: ad.adsetDailyBudget,
+          adsetLifetimeBudget: ad.adsetLifetimeBudget,
+          reach: ad.metrics?.reach || 0,
+          impressions: ad.metrics?.impressions || 0,
+          postEngagements: ad.metrics?.postEngagements || 0,
+          clicks: ad.metrics?.clicks || 0,
+          messagingContacts: ad.metrics?.messagingContacts || 0,
+          effectiveStatus: ad.effectiveStatus,
+          configuredStatus: ad.configuredStatus,
+          issuesInfo: ad.issuesInfo,
+        }));
+        setAds(formatted);
+      }
+    } finally {
+      setAdsLoading(false);
+    }
+  }, [viewSelectedAccountIds, dateRange, statusFilter]);
+
+  const handleAdsPageChange = useCallback((page: number) => {
+    setAdsPage(page);
+    fetchAdsForPage(page);
+  }, [fetchAdsForPage]);
 
   // Check for refresh param on mount
   const shouldForceRefresh = searchParams?.get('refresh') === 'true';
@@ -1149,7 +1315,9 @@ export default function CampaignsPage() {
       setCampaigns([]);
       setAdSets([]);
       setAds([]);
-      setLoading(false);
+      setCampaignsLoading(false);
+      setAdsetsLoading(false);
+      setAdsLoading(false);
       return;
     }
 
@@ -1158,11 +1326,13 @@ export default function CampaignsPage() {
       setCampaigns([]);
       setAdSets([]);
       setAds([]);
-      setLoading(false);
+      setCampaignsLoading(false);
+      setAdsetsLoading(false);
+      setAdsLoading(false);
       return;
     }
 
-    // Check if accounts OR date range changed (tab change doesn't refetch - we prefetch all)
+    // Check if accounts, date range, or status filter changed
     const currentAccountIds = Array.from(viewSelectedAccountIds).sort().join(',');
     const currentDateRangeString = dateRange?.from && dateRange?.to
       ? `${dateRange.from.toISOString()}_${dateRange.to.toISOString()}`
@@ -1170,8 +1340,9 @@ export default function CampaignsPage() {
 
     const accountsChanged = lastFetchedAccountsRef.current !== currentAccountIds;
     const dateChanged = lastFetchedDateRangeRef.current !== currentDateRangeString;
+    const statusChanged = lastFetchedStatusRef.current !== statusFilter;
 
-    const hasChanged = accountsChanged || dateChanged;
+    const hasChanged = accountsChanged || dateChanged || statusChanged;
 
     if (!hasChanged && !shouldForceRefresh) {
       return;
@@ -1179,6 +1350,10 @@ export default function CampaignsPage() {
 
     lastFetchedAccountsRef.current = currentAccountIds;
     lastFetchedDateRangeRef.current = currentDateRangeString;
+    lastFetchedStatusRef.current = statusFilter;
+    setCampaignsPage(1);
+    setAdsetsPage(1);
+    setAdsPage(1);
 
     // Prefetch all tabs in parallel for instant tab switching
     const fetchData = async () => {
@@ -1196,28 +1371,12 @@ export default function CampaignsPage() {
     fetchData();
   }, [session, viewSelectedAccountIds, dateRange, shouldForceRefresh, fetchAllTabsInParallel]);
 
-
-
-
-
-  // Polling for real-time updates every 15 seconds
-  useEffect(() => {
-    if (!session?.user || selectedAccounts.length === 0) return;
-
-    const pollInterval = setInterval(() => {
-      if (document.hidden) return;
-      fetchAllTabsInParallel(false, true);
-    }, 15000);
-
-    return () => clearInterval(pollInterval);
-  }, [session, selectedAccounts, dateRange, fetchAllTabsInParallel]);
-
   const fetchCampaigns = async (forceRefresh = false, silent = false) => {
     if (isFetchingRef.current) return; // Prevent concurrent requests
 
     try {
       isFetchingRef.current = true;
-      if (!silent) setLoading(true);
+      if (!silent) setCampaignsLoading(true);
 
       // Fetch campaigns from all selected accounts in one go
       // Fetch campaigns from specific selected accounts
@@ -1225,7 +1384,7 @@ export default function CampaignsPage() {
       const targetIds = Array.from(viewSelectedAccountIds);
 
       if (targetIds.length === 0) {
-        setLoading(false);
+        setCampaignsLoading(false);
         isFetchingRef.current = false;
         return;
       }
@@ -1283,7 +1442,7 @@ export default function CampaignsPage() {
       console.error('Error fetching campaigns:', err);
       if (!silent) setError(err instanceof Error ? err.message : 'Failed to load campaigns');
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent) setCampaignsLoading(false);
       isFetchingRef.current = false;
     }
   };
@@ -1293,12 +1452,12 @@ export default function CampaignsPage() {
 
     try {
       isFetchingRef.current = true;
-      if (!silent) setLoading(true);
+      if (!silent) setAdsetsLoading(true);
 
       const targetIds = Array.from(viewSelectedAccountIds);
 
       if (targetIds.length === 0) {
-        setLoading(false);
+        setAdsetsLoading(false);
         isFetchingRef.current = false;
         return;
       }
@@ -1356,7 +1515,7 @@ export default function CampaignsPage() {
       console.error('Error fetching ad sets:', err);
       if (!silent) setError(err instanceof Error ? err.message : 'Failed to load ad sets');
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent) setAdsetsLoading(false);
       isFetchingRef.current = false;
     }
   };
@@ -1366,12 +1525,12 @@ export default function CampaignsPage() {
 
     try {
       isFetchingRef.current = true;
-      if (!silent) setLoading(true);
+      if (!silent) setAdsLoading(true);
 
       const targetIds = Array.from(viewSelectedAccountIds);
 
       if (targetIds.length === 0) {
-        setLoading(false);
+        setAdsLoading(false);
         isFetchingRef.current = false;
         return;
       }
@@ -1434,7 +1593,7 @@ export default function CampaignsPage() {
       console.error('Error fetching ads:', err);
       if (!silent) setError(err instanceof Error ? err.message : 'Failed to load ads');
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent) setAdsLoading(false);
       isFetchingRef.current = false;
     }
   };
@@ -1906,9 +2065,9 @@ export default function CampaignsPage() {
             variant="outline"
             size="sm"
             className="gap-2 bg-white dark:bg-zinc-950 border-gray-200 dark:border-zinc-800"
-            disabled={loading}
+            disabled={campaignsLoading || adsetsLoading || adsLoading}
           >
-            <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
+            <RefreshCw className={cn("h-4 w-4 mr-2", (campaignsLoading || adsetsLoading || adsLoading) && "animate-spin")} />
             {t('common.refresh', 'Refresh')}
           </Button>
 
@@ -2155,7 +2314,7 @@ export default function CampaignsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody className="[&_tr:last-child]:!border-b [&_tr:last-child]:!border-gray-200 dark:[&_tr:last-child]:!border-zinc-800 [&_td]:!py-1 [&_td]:!px-3">
-                      {loading ? (
+                      {campaignsLoading ? (
                         Array.from({ length: 10 }).map((_, i) => (
                           <TableRow key={i} className="animate-pulse h-[55px]">
                             <TableCell className="w-12 min-w-[3rem] max-w-[3rem] px-3 py-1 !pr-3 !pl-3 text-center align-middle"><div className="flex justify-center items-center w-full"><div className="h-5 w-5 bg-gray-200 dark:bg-zinc-800 rounded-[6px]"></div></div></TableCell>
@@ -2520,6 +2679,31 @@ export default function CampaignsPage() {
                     </TableBody>
                   </Table>
                 </div>
+                {campaignsTotal > PAGE_SIZE && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-zinc-800">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      {t('campaigns.pagination.showing', 'Showing')} {(campaignsPage - 1) * PAGE_SIZE + 1}-{Math.min(campaignsPage * PAGE_SIZE, campaignsTotal)} {t('campaigns.pagination.of', 'of')} {campaignsTotal}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={campaignsPage <= 1 || campaignsLoading}
+                        onClick={() => handleCampaignsPageChange(campaignsPage - 1)}
+                      >
+                        {t('campaigns.pagination.prev', 'Previous')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={campaignsPage * PAGE_SIZE >= campaignsTotal || campaignsLoading}
+                        onClick={() => handleCampaignsPageChange(campaignsPage + 1)}
+                      >
+                        {t('campaigns.pagination.next', 'Next')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </>
             </div >
           )
@@ -2568,7 +2752,7 @@ export default function CampaignsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody className="[&_tr:last-child]:!border-b [&_tr:last-child]:!border-gray-200 dark:[&_tr:last-child]:!border-zinc-800 [&_td]:!py-1 [&_td]:!px-3">
-                      {loading ? (
+                      {adsetsLoading ? (
                         Array.from({ length: 10 }).map((_, i) => (
                           <TableRow key={i} className="animate-pulse h-[55px]">
                             <TableCell className="w-12 min-w-[3rem] max-w-[3rem] px-3 py-1 !pr-3 !pl-3 text-center align-middle"><div className="flex justify-center items-center w-full"><div className="h-5 w-5 bg-gray-200 dark:bg-zinc-800 rounded-[6px]"></div></div></TableCell>
@@ -2989,6 +3173,21 @@ export default function CampaignsPage() {
                     </TableBody>
                   </Table>
                 </div>
+                {adsetsTotal > PAGE_SIZE && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-zinc-800">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      {t('campaigns.pagination.showing', 'Showing')} {(adsetsPage - 1) * PAGE_SIZE + 1}-{Math.min(adsetsPage * PAGE_SIZE, adsetsTotal)} {t('campaigns.pagination.of', 'of')} {adsetsTotal}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" disabled={adsetsPage <= 1 || adsetsLoading} onClick={() => handleAdSetsPageChange(adsetsPage - 1)}>
+                        {t('campaigns.pagination.prev', 'Previous')}
+                      </Button>
+                      <Button variant="outline" size="sm" disabled={adsetsPage * PAGE_SIZE >= adsetsTotal || adsetsLoading} onClick={() => handleAdSetsPageChange(adsetsPage + 1)}>
+                        {t('campaigns.pagination.next', 'Next')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </>
             </div>
           )
@@ -3036,7 +3235,7 @@ export default function CampaignsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody className="[&_tr:last-child]:!border-b [&_tr:last-child]:!border-gray-200 dark:[&_tr:last-child]:!border-zinc-800 [&_td]:!py-1 [&_td]:!px-3">
-                      {loading ? (
+                      {adsLoading ? (
                         Array.from({ length: 10 }).map((_, i) => (
                           <TableRow key={i} className="animate-pulse h-[55px]">
                             <TableCell className="w-12 min-w-[3rem] max-w-[3rem] px-3 py-1 !pr-3 !pl-3 text-center align-middle"><div className="flex justify-center items-center w-full"><div className="h-5 w-5 bg-gray-200 dark:bg-zinc-800 rounded-[6px]"></div></div></TableCell>
@@ -3557,6 +3756,21 @@ export default function CampaignsPage() {
                     </TableBody>
                   </Table>
                 </div>
+                {adsTotal > PAGE_SIZE && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-zinc-800">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      {t('campaigns.pagination.showing', 'Showing')} {(adsPage - 1) * PAGE_SIZE + 1}-{Math.min(adsPage * PAGE_SIZE, adsTotal)} {t('campaigns.pagination.of', 'of')} {adsTotal}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" disabled={adsPage <= 1 || adsLoading} onClick={() => handleAdsPageChange(adsPage - 1)}>
+                        {t('campaigns.pagination.prev', 'Previous')}
+                      </Button>
+                      <Button variant="outline" size="sm" disabled={adsPage * PAGE_SIZE >= adsTotal || adsLoading} onClick={() => handleAdsPageChange(adsPage + 1)}>
+                        {t('campaigns.pagination.next', 'Next')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </>
             </div>
           )

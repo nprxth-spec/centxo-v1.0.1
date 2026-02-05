@@ -7,12 +7,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getTeamMemberLimit } from '@/lib/plan-limits';
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { plan: true },
+    });
+    const plan = user?.plan || 'FREE';
+    const limit = getTeamMemberLimit(plan);
+
+    const memberCount = await prisma.teamMember.count({
+      where: { userId: session.user.id },
+    });
+    if (memberCount >= limit) {
+      return NextResponse.json(
+        { error: `Your plan allows up to ${limit} team member(s). Please upgrade to add more.` },
+        { status: 403 }
+      );
     }
 
     const { email, name } = await request.json();

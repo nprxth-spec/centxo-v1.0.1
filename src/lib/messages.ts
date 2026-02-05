@@ -15,6 +15,11 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'nav.launchOriginal': 'Launch',
     'nav.accounts': 'Ad Accounts',
     'adsManager.accounts': 'Accounts',
+    'adsManager.accountsSubtitle': 'Manage your connected ad accounts',
+    'adsManager.accountsByBusinessTitle': 'Accounts by Business',
+    'adsManager.accountsByBusinessSubtitle': 'Ad accounts in your Business Portfolios',
+    'adsManager.pagesByBusinessTitle': 'Pages by Business',
+    'adsManager.pagesByBusinessSubtitle': 'Pages across your Business Portfolios',
     'adsManager.campaigns': 'Campaigns',
     'adsManager.superTarget': 'Super Target',
     'nav.reportTools': 'Report Tools',
@@ -59,6 +64,8 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'adbox.applyChanges': 'Apply Changes',
     'adbox.typeMessage': 'Type a message...',
     'adbox.newMessage': 'New Message',
+    'adbox.fromAd': 'From Ad',
+    'adbox.adPost': 'Ad post',
     'adbox.selectConversation': 'Select a conversation',
     'adbox.connectFacebook': 'Connect Facebook to use AdBox',
     'adbox.connectDescription': 'Connect your Facebook account in Settings to view and reply to messages from your Pages.',
@@ -354,6 +361,10 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'campaigns.tooltips.adSetName': 'Ad Set Name',
     // Alerts
     'campaigns.alert.selectAccount': 'Please select at least one account',
+    'campaigns.pagination.showing': 'Showing',
+    'campaigns.pagination.of': 'of',
+    'campaigns.pagination.prev': 'Previous',
+    'campaigns.pagination.next': 'Next',
 
     // Launch
     'launch.title': 'Launch New Campaign',
@@ -1280,6 +1291,11 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'nav.launchOriginal': 'สร้างแคมเปญ',
     'nav.accounts': 'บัญชีโฆษณา',
     'adsManager.accounts': 'บัญชี',
+    'adsManager.accountsSubtitle': 'จัดการบัญชีโฆษณาที่เชื่อมต่อ',
+    'adsManager.accountsByBusinessTitle': 'บัญชีตาม Business',
+    'adsManager.accountsByBusinessSubtitle': 'บัญชีโฆษณาใน Business Portfolios ของคุณ',
+    'adsManager.pagesByBusinessTitle': 'เพจตาม Business',
+    'adsManager.pagesByBusinessSubtitle': 'เพจใน Business Portfolios ของคุณ',
     'adsManager.campaigns': 'แคมเปญ',
     'adsManager.superTarget': 'กลุ่มเป้าหมายขั้นสูง',
     'nav.reportTools': 'เครื่องมือรายงาน',
@@ -1324,6 +1340,8 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'adbox.applyChanges': 'ใช้การเปลี่ยนแปลง',
     'adbox.typeMessage': 'พิมพ์ข้อความ...',
     'adbox.newMessage': 'ข้อความใหม่',
+    'adbox.fromAd': 'จากโฆษณา',
+    'adbox.adPost': 'โพสต์โฆษณา',
     'adbox.selectConversation': 'เลือกการสนทนา',
     'adbox.connectFacebook': 'เชื่อมต่อ Facebook เพื่อใช้ AdBox',
     'adbox.connectDescription': 'เชื่อมต่อบัญชี Facebook ในตั้งค่าเพื่อดูและตอบข้อความจากเพจของคุณ',
@@ -1619,6 +1637,10 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'campaigns.tooltips.adSetName': 'ชื่อชุดโฆษณา',
     // Alerts
     'campaigns.alert.selectAccount': 'กรุณาเลือกบัญชีโฆษณาอย่างน้อยหนึ่งบัญชี',
+    'campaigns.pagination.showing': 'แสดง',
+    'campaigns.pagination.of': 'จาก',
+    'campaigns.pagination.prev': 'ก่อนหน้า',
+    'campaigns.pagination.next': 'ถัดไป',
 
     // Launch
     'launch.title': 'สร้างแคมเปญใหม่',

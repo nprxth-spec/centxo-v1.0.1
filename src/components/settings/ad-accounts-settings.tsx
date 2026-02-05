@@ -19,8 +19,12 @@ export function AdAccountsSettings() {
 
     useEffect(() => {
         setIsMounted(true);
-        // Refresh data when this tab is viewed or when Facebook account is added
-        refreshData(true);
+        // When Facebook account added: bypass cooldown to get fresh data immediately
+        if (accountAdded) {
+            refreshData(true, { bypassCooldown: true });
+        } else {
+            refreshData(true);
+        }
     }, [refreshData, accountAdded]);
 
     // Reset the flag after refresh

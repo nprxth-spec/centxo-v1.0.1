@@ -29,7 +29,6 @@ interface Interest {
 
 export default function AdminInterestsPage() {
     const [loading, setLoading] = useState(true);
-    const [syncing, setSyncing] = useState(false);
     const [connecting, setConnecting] = useState(false);
     const [hasConnection, setHasConnection] = useState(false);
     const [checkingConnection, setCheckingConnection] = useState(true);
@@ -99,32 +98,12 @@ export default function AdminInterestsPage() {
         }
     };
 
-    const handleSync = async () => {
-        setSyncing(true);
-        try {
-            const res = await fetch('/api/facebook/interests/sync', { method: 'POST' });
-            if (res.ok) {
-                const data = await res.json();
-                showCustomToast(`Synced ${data.count || 0} interests successfully!`, { type: 'success' });
-                fetchData();
-            } else {
-                const err = await res.json();
-                throw new Error(err.details || err.error || 'Sync failed');
-            }
-        } catch (error: any) {
-            console.error(error);
-            showCustomToast(`Failed: ${error.message}`, { type: 'error' });
-        } finally {
-            setSyncing(false);
-        }
-    };
-
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Interests Database</h1>
-                    <p className="text-muted-foreground">Manage and sync Facebook targeting interests.</p>
+                    <p className="text-muted-foreground">Manage Facebook targeting interests.</p>
                 </div>
                 <div className="flex gap-2">
                     <Button
@@ -143,14 +122,6 @@ export default function AdminInterestsPage() {
                     >
                         <Download className="h-4 w-4" />
                         Export All
-                    </Button>
-                    <Button
-                        onClick={handleSync}
-                        disabled={syncing}
-                        className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                        <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-                        {syncing ? 'Syncing from Facebook...' : 'Sync Now'}
                     </Button>
                 </div>
             </div>
@@ -201,7 +172,7 @@ export default function AdminInterestsPage() {
                             ) : interests.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
-                                        Database is empty. Please sync to pull data.
+                                        Database is empty.
                                     </TableCell>
                                 </TableRow>
                             ) : (

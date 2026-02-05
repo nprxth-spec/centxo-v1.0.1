@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { exchangeForLongLivedToken } from '@/lib/facebook/token-helper';
 import { createAuditLog, getRequestMetadata } from '@/lib/audit';
+import { deleteCache, generateCacheKey } from '@/lib/cache/redis';
+import { invalidateTeamCachesForUser } from '@/lib/cache/invalidate-team';
 
 export async function GET(req: NextRequest) {
     try {
@@ -38,8 +41,12 @@ export async function GET(req: NextRequest) {
         }
 
         const tokenData = await tokenResponse.json();
-        const accessToken = tokenData.access_token;
-        const expiresIn = tokenData.expires_in || 5184000; // Default 60 days
+        if (!tokenData.access_token) {
+            throw new Error('Failed to get access token');
+        }
+
+        // Exchange short-lived token for long-lived (~60 days)
+        const { accessToken, expiresIn } = await exchangeForLongLivedToken(tokenData.access_token);
 
         // Get Facebook user info
         const userResponse = await fetch(
@@ -100,6 +107,14 @@ export async function GET(req: NextRequest) {
                 role: 'MEMBER',
             },
         });
+
+        // Invalidate team caches so next fetch gets fresh data (Redis + in-memory)
+        invalidateTeamCachesForUser(targetHostId);
+        await Promise.all([
+          deleteCache(generateCacheKey('team:config', targetHostId)),
+          deleteCache(generateCacheKey('team:ad-accounts', targetHostId)),
+          deleteCache(generateCacheKey('team:facebook-pictures', targetHostId)),
+        ]);
 
         const { ipAddress, userAgent } = getRequestMetadata(req);
         await createAuditLog({

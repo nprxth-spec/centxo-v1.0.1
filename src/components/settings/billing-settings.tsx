@@ -3,9 +3,16 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
-import { Check, CreditCard, FileText, Zap } from 'lucide-react';
+import { Check, CreditCard, FileText, Zap, Loader2, Building2, Users } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { PLAN_LIMITS } from '@/lib/plan-limits';
+
+const BILLING_PLANS = [
+    { key: 'FREE' as const, price: 0, originalPrice: undefined as number | undefined, details: ['Campaign, Ad Set, Ad management', 'Basic analytics', 'Standard support', 'Single user only'] },
+    { key: 'PLUS' as const, price: 39, originalPrice: 99, details: ['Everything in FREE', 'Advanced analytics', 'Priority support', 'AI Optimization', 'Team (3 members)', 'Adbox', 'Google Sheets export'] },
+    { key: 'PRO' as const, price: 99, originalPrice: 199, details: ['Everything in PLUS', 'Enterprise analytics', 'Dedicated support', 'Early access', 'Team (10 members)', 'More accounts & pages'] },
+];
 
 export function BillingSettings() {
     const { t } = useLanguage();
@@ -15,11 +22,11 @@ export function BillingSettings() {
 
     const [userPlan, setUserPlan] = useState<string>('FREE');
     const [loading, setLoading] = useState(true);
+    const [upgradeLoading, setUpgradeLoading] = useState<string | null>(null);
 
     const defaultTab = searchParams.get('tab') || 'subscription';
     const [activeTab, setActiveTab] = useState(defaultTab);
 
-    // Update URL when tab changes
     const handleTabChange = (value: string) => {
         setActiveTab(value);
         const params = new URLSearchParams(searchParams.toString());
@@ -27,7 +34,6 @@ export function BillingSettings() {
         router.push(`${pathname}?${params.toString()}`, { scroll: false });
     };
 
-    // Sync state if URL changes externally
     useEffect(() => {
         const tabFromUrl = searchParams.get('tab');
         if (tabFromUrl && tabFromUrl !== activeTab) {
@@ -39,49 +45,33 @@ export function BillingSettings() {
         fetch('/api/user/plan')
             .then(res => res.json())
             .then(data => {
-                setUserPlan(data.plan || 'FREE');
+                setUserPlan((data.plan || 'FREE').toUpperCase());
                 setLoading(false);
             })
-            .catch(err => {
-                console.error(err);
-                setLoading(false);
-            });
+            .catch(() => setLoading(false));
     }, []);
 
-    const plans = [
-        {
-            name: t('settings.billing.plans.free.name', 'FREE'),
-            price: '$0',
-            period: t('settings.billing.period', '/month'),
-            features: [
-                t('settings.billing.plans.features.adAccounts10', '10 Ad Accounts'),
-                t('settings.billing.plans.features.analyticsBasic', 'Basic Analytics'),
-                t('settings.billing.plans.features.supportStandard', 'Standard Support')
-            ],
-        },
-        {
-            name: t('settings.billing.plans.plus.name', 'PLUS'),
-            price: '$39',
-            period: t('settings.billing.period', '/month'),
-            features: [
-                t('settings.billing.plans.features.adAccounts20', '20 Ad Accounts'),
-                t('settings.billing.plans.features.analyticsAdvanced', 'Advanced Analytics'),
-                t('settings.billing.plans.features.supportPriority', 'Priority Support'),
-                t('settings.billing.plans.features.aiOptimization', 'AI Optimization')
-            ],
-        },
-        {
-            name: t('settings.billing.plans.pro.name', 'PRO'),
-            price: '$99',
-            period: t('settings.billing.period', '/month'),
-            features: [
-                t('settings.billing.plans.features.adAccounts50', '50 Ad Accounts'),
-                t('settings.billing.plans.features.analyticsEnterprise', 'Enterprise Analytics'),
-                t('settings.billing.plans.features.supportDedicated', 'Dedicated Support'),
-                t('settings.billing.plans.features.earlyAccess', 'Early Access Features')
-            ],
-        },
-    ];
+    const handleUpgrade = async (planKey: string) => {
+        if (planKey === 'FREE') return;
+        setUpgradeLoading(planKey);
+        try {
+            const res = await fetch('/api/stripe/checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ planName: planKey }),
+            });
+            const data = await res.json();
+            if (data.url) {
+                window.location.href = data.url;
+            } else {
+                alert(data.error || 'Failed to start checkout');
+            }
+        } catch (err) {
+            alert('Failed to start checkout');
+        } finally {
+            setUpgradeLoading(null);
+        }
+    };
 
     return (
         <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col h-full">
@@ -125,38 +115,76 @@ export function BillingSettings() {
                             </div>
                             <div className="my-6 h-[1px] bg-border" />
                             
-                            <div className="grid md:grid-cols-3 gap-6">
-                                {plans.map((plan) => {
-                                    const isCurrent = userPlan === plan.name;
-                                    return (
-                                        <div key={plan.name} className={`bg-card border border-border rounded-xl p-6 flex flex-col ${isCurrent ? 'ring-2 ring-primary border-primary' : ''}`}>
-                                            <div className="mb-4">
-                                                <h3 className="text-lg font-bold text-foreground">{plan.name}</h3>
-                                                <div className="flex items-baseline mt-2">
-                                                    <span className="text-3xl font-bold text-foreground">{plan.price}</span>
-                                                    <span className="text-muted-foreground ml-1">{plan.period}</span>
-                                                </div>
-                                            </div>
-
-                                            <ul className="mb-6 space-y-3 flex-1">
-                                                {plan.features.map((feature) => (
-                                                    <li key={feature} className="flex items-start text-sm text-muted-foreground">
-                                                        <Check className="w-4 h-4 text-primary mr-2 flex-shrink-0 mt-0.5" />
-                                                        {feature}
-                                                    </li>
-                                                ))}
-                                            </ul>
-
-                                            <Button
-                                                variant={isCurrent ? "outline" : "default"}
-                                                className={`w-full ${isCurrent ? "cursor-default" : ""}`}
+                            {loading ? (
+                                <div className="flex justify-center py-12">
+                                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                                </div>
+                            ) : (
+                                <div className="grid md:grid-cols-3 gap-6">
+                                    {BILLING_PLANS.map((plan) => {
+                                        const isCurrent = userPlan === plan.key;
+                                        const limits = PLAN_LIMITS[plan.key];
+                                        return (
+                                            <div
+                                                key={plan.key}
+                                                className={`bg-card border rounded-xl p-6 flex flex-col ${
+                                                    isCurrent ? 'ring-2 ring-primary border-primary' : 'border-border'
+                                                }`}
                                             >
-                                                {isCurrent ? t('settings.billing.currentPlan', 'Current Plan') : t('settings.billing.upgrade', 'Upgrade')}
-                                            </Button>
-                                        </div>
-                                    )
-                                })}
-                            </div>
+                                                <div className="mb-4">
+                                                    <h3 className="text-lg font-bold text-foreground">{plan.key}</h3>
+                                                    <div className="flex items-baseline gap-2 mt-2">
+                                                        <span className="text-3xl font-bold text-foreground">${plan.price}</span>
+                                                        {plan.originalPrice && (
+                                                            <span className="text-muted-foreground line-through text-lg">${plan.originalPrice}</span>
+                                                        )}
+                                                        <span className="text-muted-foreground text-sm">{t('settings.billing.period', '/month')}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-col gap-2 text-sm font-medium text-muted-foreground mb-4">
+                                                    <div className="flex items-center gap-2">
+                                                        <Building2 className="w-4 h-4 text-primary flex-shrink-0" />
+                                                        {limits.adAccounts} Ad Accounts
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <FileText className="w-4 h-4 text-primary flex-shrink-0" />
+                                                        {limits.pages} Pages
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Users className="w-4 h-4 text-primary flex-shrink-0" />
+                                                        {limits.teamMembers} Team · {limits.facebookAccounts} Facebook
+                                                    </div>
+                                                </div>
+
+                                                <ul className="mb-6 space-y-2 flex-1">
+                                                    {plan.details.map((item, i) => (
+                                                        <li key={i} className="flex items-start text-sm text-muted-foreground">
+                                                            <Check className="w-4 h-4 text-primary mr-2 flex-shrink-0 mt-0.5" />
+                                                            {item}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+
+                                                <Button
+                                                    variant={isCurrent ? 'outline' : 'default'}
+                                                    className={`w-full ${isCurrent ? 'cursor-default' : ''}`}
+                                                    onClick={() => !isCurrent && handleUpgrade(plan.key)}
+                                                    disabled={isCurrent || upgradeLoading !== null}
+                                                >
+                                                    {upgradeLoading === plan.key ? (
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                    ) : isCurrent ? (
+                                                        t('settings.billing.currentPlan', 'Current Plan')
+                                                    ) : (
+                                                        t('settings.billing.upgrade', 'Upgrade')
+                                                    )}
+                                                </Button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </TabsContent>
 
                         <TabsContent value="payment" className="space-y-6 mt-0">

@@ -1,7 +1,9 @@
 'use client';
 
 import { useSession, signIn } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useConfig } from '@/contexts/AdAccountContext';
 import { useState, useEffect } from 'react';
 import { Loader2, CheckCircle2, ExternalLink, AlertCircle, Facebook, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -48,6 +50,8 @@ interface TeamData {
 export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () => void }) {
     const { t } = useLanguage();
     const { data: session } = useSession();
+    const router = useRouter();
+    const { planLimits } = useConfig();
     const { toast } = useToast();
     const [loading, setLoading] = useState(true);
     const [connecting, setConnecting] = useState(false);
@@ -62,6 +66,9 @@ export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () =>
     const [mainFacebookProfile, setMainFacebookProfile] = useState<{ name: string; image: string } | null>(null);
 
     const facebookMembers = teamData?.members.filter(m => m.memberType === 'facebook') || [];
+    const facebookAccountLimit = planLimits.facebookAccounts;
+    const atFacebookAccountLimit = facebookMembers.length >= facebookAccountLimit;
+    const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
 
     useEffect(() => {
         // Show content immediately when session is ready (don't block on fetches)
@@ -76,11 +83,9 @@ export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () =>
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('success') === 'true') {
             setSuccessMessage('Facebook connected successfully!');
-            setTimeout(() => {
-                fetchConnectionsData(true); // Force refresh to show new connection
-                onAccountAdded?.(); // Signal that a new account was added
-                setSuccessMessage('');
-            }, 3000);
+            fetchConnectionsData(true); // Start refresh immediately
+            onAccountAdded?.(); // Signal that a new account was added
+            setTimeout(() => setSuccessMessage(''), 3000);
 
             // Clean up URL
             const url = new URL(window.location.href);
@@ -92,11 +97,9 @@ export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () =>
         // Check for member_added callback
         if (urlParams.get('success') === 'member_added') {
             setSuccessMessage('Facebook account added successfully!');
-            setTimeout(() => {
-                fetchConnectionsData(true); // Force refresh to show new member
-                onAccountAdded?.(); // Signal that a new account was added
-                setSuccessMessage('');
-            }, 1000);
+            fetchConnectionsData(true); // Start refresh immediately
+            onAccountAdded?.(); // Signal that a new account was added
+            setTimeout(() => setSuccessMessage(''), 3000);
 
             // Clean up URL
             const url = new URL(window.location.href);
@@ -179,15 +182,21 @@ export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () =>
     };
 
     const handleAddMember = async () => {
+        if (atFacebookAccountLimit) {
+            setShowUpgradeDialog(true);
+            return;
+        }
         setIsAdding(true);
         try {
             const returnTo = encodeURIComponent('/settings/connections?tab=connections');
             const response = await fetch(`/api/team/add-member?returnTo=${returnTo}`);
+            const data = await response.json();
             if (response.ok) {
-                const data = await response.json();
                 window.location.href = data.authUrl;
+            } else if (response.status === 403) {
+                setErrorMessage(data.error || 'Facebook account limit reached. Please upgrade your plan.');
             } else {
-                throw new Error('Failed to initiate OAuth');
+                throw new Error(data.error || 'Failed to initiate OAuth');
             }
         } catch (error) {
             console.error('Error adding member:', error);
@@ -280,7 +289,16 @@ export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () =>
                                     </>
                                 ) : (
                                     <>
-                                        {facebookMembers.length} {facebookMembers.length === 1 ? 'account' : 'accounts'}
+                                        {facebookAccountLimit > 0 ? (
+                                            <>
+                                                {facebookMembers.length} of {facebookAccountLimit} {facebookAccountLimit === 1 ? 'account' : 'accounts'}
+                                                {atFacebookAccountLimit && (
+                                                    <Badge variant="secondary" className="text-xs">Limit reached</Badge>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <span>Upgrade your plan to add Facebook accounts</span>
+                                        )}
                                     </>
                                 )}
                             </p>
@@ -402,12 +420,14 @@ export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () =>
                         <AlertDialogTitle className="text-xl">
                             Remove team member?
                         </AlertDialogTitle>
-                        <AlertDialogDescription className="text-base space-y-2">
-                            <div>
-                                Are you sure you want to remove {memberToRemove?.facebookName || ''} from your team?
-                            </div>
-                            <div className="font-semibold text-destructive">
-                                This will immediately revoke their access to all team resources.
+                        <AlertDialogDescription asChild>
+                            <div className="text-base space-y-2 text-muted-foreground">
+                                <p>
+                                    Are you sure you want to remove {memberToRemove?.facebookName || ''} from your team?
+                                </p>
+                                <p className="font-semibold text-destructive">
+                                    This will immediately revoke their access to all team resources.
+                                </p>
                             </div>
                         </AlertDialogDescription>
                     </AlertDialogHeader>
@@ -429,6 +449,39 @@ export function ConnectionsSettings({ onAccountAdded }: { onAccountAdded?: () =>
                                     Remove Member
                                 </>
                             )}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Upgrade Plan Dialog - when Facebook account limit reached */}
+            <AlertDialog open={showUpgradeDialog} onOpenChange={setShowUpgradeDialog}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="text-xl">Upgrade to add more Facebook accounts</AlertDialogTitle>
+                        <AlertDialogDescription asChild>
+                            <div className="text-base space-y-2 text-muted-foreground">
+                                <p>
+                                    Your current plan allows up to {facebookAccountLimit} Facebook account{facebookAccountLimit !== 1 ? 's' : ''}.
+                                    Upgrade to PLUS or PRO to add more.
+                                </p>
+                                <ul className="list-disc list-inside space-y-1 mt-2">
+                                    <li>PLUS: 4 Facebook accounts</li>
+                                    <li>PRO: 10 Facebook accounts</li>
+                                </ul>
+                            </div>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-blue-600 hover:bg-blue-700"
+                            onClick={() => {
+                                setShowUpgradeDialog(false);
+                                router.push('/pricing');
+                            }}
+                        >
+                            Upgrade Plan
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

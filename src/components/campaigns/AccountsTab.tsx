@@ -329,7 +329,8 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
         // If selectedAccounts changes, DO NOT fetch (unless it's the very first load).
 
         if (isInitialLoad) {
-            fetchAccounts(true).finally(() => setHasInitialFetch(true)); // Force refresh to get current Business/Account names
+            // Use cache when available - reduce Meta API quota for 200+ users
+            fetchAccounts(false).finally(() => setHasInitialFetch(true));
         }
     }, [selectedAccounts, session]); // Dependencies for Initial Load checking
 
@@ -470,9 +471,6 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
             <TableCell className="px-4 py-2 text-right">
                 <div className="h-4 w-16 bg-gray-200 dark:bg-zinc-700 rounded animate-pulse ml-auto" />
             </TableCell>
-            <TableCell className="px-4 py-2 text-center">
-                <div className="h-6 w-6 bg-gray-200 dark:bg-zinc-700 rounded animate-pulse mx-auto" />
-            </TableCell>
         </TableRow>
     );
 
@@ -493,7 +491,6 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
                                 <TableHead className="px-4 py-2 text-left text-sm font-semibold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-zinc-900">{t('accounts.table.timezone', 'Time Zone')}</TableHead>
                                 <TableHead className="px-4 py-2 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-zinc-900">{t('accounts.table.nationality', 'Nationality')}</TableHead>
                                 <TableHead className="px-4 py-2 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-zinc-900">{t('accounts.table.currency', 'Currency')}</TableHead>
-                                <TableHead className="px-4 py-2 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-zinc-900">{t('accounts.table.action', 'Action')}</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="divide-y divide-gray-200 dark:divide-zinc-800">
@@ -551,9 +548,6 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
                                 <SortableHeader columnKey="timeZone" label={t('accounts.table.timezone', 'Time Zone')} align="right" className="max-w-[280px]" />
                                 <SortableHeader columnKey="nationality" label={t('accounts.table.nationality', 'Nationality')} align="center" className="max-w-[280px]" />
                                 <SortableHeader columnKey="currency" label={t('accounts.table.currency', 'Currency')} align="center" className="max-w-[280px]" />
-                                <TableHead className="px-4 py-2 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 max-w-[280px]">
-                                    {t('accounts.table.action', 'Action')}
-                                </TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="divide-y divide-gray-200 dark:divide-zinc-800 border-b border-gray-200 dark:border-zinc-800">
@@ -717,35 +711,11 @@ export function AccountsTab({ selectedIds, onSelectionChange, refreshTrigger = 0
                                             {account.currency}
                                         </Badge>
                                     </TableCell>
-                                    <TableCell className="px-4 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" className="h-8 w-8 p-0">
-                                                    <span className="sr-only">Open menu</span>
-                                                    <MoreHorizontal className="h-4 w-4" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end">
-                                                <DropdownMenuItem onClick={() => openSpendingLimitDialog(account)}>
-                                                    <Edit3 className="mr-2 h-4 w-4" />
-                                                    <span>{t('accounts.actions.setLimit', 'Set Spending Limit')}</span>
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => handleSpendingLimitAction(account, 'reset')}>
-                                                    <RotateCcw className="mr-2 h-4 w-4" />
-                                                    <span>{t('accounts.actions.resetLimit', 'Reset Limit')}</span>
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => handleSpendingLimitAction(account, 'delete')} className="text-red-600 focus:text-red-600">
-                                                    <Trash2 className="mr-2 h-4 w-4" />
-                                                    <span>{t('accounts.actions.deleteLimit', 'Delete Limit')}</span>
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </TableCell>
                                 </TableRow>
                             ))}
                             {accounts.length === 0 && !loading && (
                                 <TableRow>
-                                    <TableCell colSpan={10} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-zinc-900/50">
+                                    <TableCell colSpan={9} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-zinc-900/50">
                                         {t('accounts.noAccounts', 'No accounts found')}
                                     </TableCell>
                                 </TableRow>

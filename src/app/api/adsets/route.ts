@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { rateLimit, RateLimitPresets } from '@/lib/middleware/rateLimit';
 import { withCacheSWR, generateCacheKey, CacheTTL, deleteCache } from '@/lib/cache/redis';
 import { TokenInfo, getValidTokenForAdAccount } from '@/lib/facebook/token-helper';
+import { getApiAccountCap, getDynamicChunkSize, getDynamicChunkDelayMs } from '@/lib/plan-limits';
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Split comma-separated IDs
-    const adAccountIds = adAccountId.split(',').filter(Boolean);
+    let adAccountIds = adAccountId.split(',').filter(Boolean);
 
     // Get date range parameters
     const dateFrom = searchParams.get('dateFrom');
@@ -117,13 +118,25 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const plan = (teamOwner as any)?.plan || (user as any)?.plan || 'FREE';
+    const cap = getApiAccountCap(plan);
+    if (adAccountIds.length > cap) {
+      adAccountIds = adAccountIds.slice(0, cap);
+    }
+
     const forceRefresh = searchParams.get('refresh') === 'true';
-    const CACHE_VERSION = 'v1';
+    const limitParam = searchParams.get('limit');
+    const limit = limitParam ? Math.min(500, Math.max(1, parseInt(limitParam, 10) || 50)) : 50;
+    const offsetParam = searchParams.get('offset');
+    const offset = offsetParam ? Math.max(0, parseInt(offsetParam, 10) || 0) : 0;
+    const usePaginated = typeof limit === 'number' && limit <= 500;
+
+    const CACHE_VERSION = 'v2'; // v2: paginated first-page
     const dateRangeKey = dateFrom && dateTo ? `${dateFrom}_${dateTo}` : 'all';
     const cacheKey = generateCacheKey(
       `meta:adsets:${CACHE_VERSION}`,
       session.user.id!,
-      `${adAccountIds.sort().join(',')}:${dateRangeKey}`
+      `${adAccountIds.sort().join(',')}:${dateRangeKey}:${usePaginated ? 'fp' : 'all'}`
     );
 
     if (forceRefresh) {
@@ -137,18 +150,23 @@ export async function GET(request: NextRequest) {
       CacheTTL.ADSETS_LIST,
       STALE_TTL,
       async () => {
-        return await fetchAdSetsFromMeta(adAccountIds, tokens, dateFrom, dateTo);
+        const chunkSize = getDynamicChunkSize(adAccountIds.length);
+        const chunkDelayMs = getDynamicChunkDelayMs(adAccountIds.length);
+        return await fetchAdSetsFromMeta(adAccountIds, tokens, dateFrom, dateTo, usePaginated, chunkSize, chunkDelayMs);
       }
     );
 
-    // Ensure we have valid data
-    const adsets = result.data?.adsets || [];
+    const allAdsets = result.data?.adsets || [];
     const errors = result.data?.errors || [];
+    const total = allAdsets.length;
+    const adsets = allAdsets.slice(offset, offset + limit);
 
     return NextResponse.json({
-      adsets: adsets,
-      count: adsets.length,
-      errors: errors,
+      adsets,
+      total,
+      returned: adsets.length,
+      hasMore: offset + adsets.length < total,
+      errors,
       isStale: result.isStale,
     });
   } catch (error) {
@@ -189,7 +207,22 @@ async function fetchAllPages(initialUrl: string, token: string): Promise<any[]> 
   return allData;
 }
 
-async function fetchAdSetsFromMeta(adAccountIds: string[], tokens: TokenInfo[], dateFrom?: string | null, dateTo?: string | null) {
+async function fetchFirstPage(initialUrl: string): Promise<any[]> {
+  const res = await fetch(initialUrl);
+  if (!res.ok) throw new Error(`Failed to fetch: ${res.statusText}`);
+  const data: any = await res.json();
+  return Array.isArray(data.data) ? data.data : [];
+}
+
+async function fetchAdSetsFromMeta(
+  adAccountIds: string[],
+  tokens: TokenInfo[],
+  dateFrom?: string | null,
+  dateTo?: string | null,
+  firstPageOnly = false,
+  chunkSize = 10,
+  chunkDelayMs = 100
+) {
   const allAdSets: any[] = [];
   const errors: string[] = [];
 
@@ -203,11 +236,8 @@ async function fetchAdSetsFromMeta(adAccountIds: string[], tokens: TokenInfo[], 
     insightsTimeRange = `time_range({'since':'${since}','until':'${until}'})`;
   }
 
-  // Chunk requests to avoid rate limiting
-  const CHUNK_SIZE = 5; // Reduced chunk size for pagination safety
-
-  for (let i = 0; i < adAccountIds.length; i += CHUNK_SIZE) {
-    const chunk = adAccountIds.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < adAccountIds.length; i += chunkSize) {
+    const chunk = adAccountIds.slice(i, i + chunkSize);
 
     await Promise.all(chunk.map(async (accountId) => {
       // Use helper to find correct token (uses Redis cache)
@@ -233,8 +263,7 @@ async function fetchAdSetsFromMeta(adAccountIds: string[], tokens: TokenInfo[], 
 
         const initialUrl = `https://graph.facebook.com/v22.0/${accountId}/adsets?fields=id,name,status,effective_status,configured_status,issues_info,ads{effective_status},campaign_id,daily_budget,lifetime_budget,optimization_goal,billing_event,bid_amount,targeting,created_time,insights.${insightsTimeRange}{spend,actions,reach,impressions,clicks}&limit=200&access_token=${token}`;
 
-        // Use pagination helper
-        const adSets = await fetchAllPages(initialUrl, token);
+        const adSets = firstPageOnly ? await fetchFirstPage(initialUrl) : await fetchAllPages(initialUrl, token);
 
         if (adSets.length > 0) {
 
@@ -286,8 +315,8 @@ async function fetchAdSetsFromMeta(adAccountIds: string[], tokens: TokenInfo[], 
       }
     }));
 
-    if (i + CHUNK_SIZE < adAccountIds.length) {
-      await new Promise(resolve => setTimeout(resolve, 200));
+    if (i + chunkSize < adAccountIds.length) {
+      await new Promise(resolve => setTimeout(resolve, chunkDelayMs));
     }
   }
 

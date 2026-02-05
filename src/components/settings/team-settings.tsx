@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import { useConfig } from '@/contexts/AdAccountContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -81,6 +82,7 @@ const getAvatarColor = (str: string) => {
 export function TeamSettings() {
     const { t } = useLanguage();
     const { data: session } = useSession();
+    const { planLimits } = useConfig();
     const { toast } = useToast();
     const [loading, setLoading] = useState(true);
     const [teamData, setTeamData] = useState<TeamData | null>(null);
@@ -128,16 +130,22 @@ export function TeamSettings() {
         }
     };
 
+    const memberLimit = planLimits.teamMembers;
+    const atMemberLimit = (teamData?.members?.length ?? 0) >= memberLimit;
+
     const handleAddMember = async () => {
+        if (atMemberLimit) return;
         setIsAdding(true);
         try {
             const response = await fetch('/api/team/add-member');
+            const data = await response.json();
             if (response.ok) {
-                const data = await response.json();
-                // Redirect to Facebook OAuth
                 window.location.href = data.authUrl;
+            } else if (response.status === 403) {
+                setErrorMessage(data.error || 'Team member limit reached');
+                setShowErrorDialog(true);
             } else {
-                throw new Error('Failed to initiate OAuth');
+                throw new Error(data.error || 'Failed to initiate OAuth');
             }
         } catch (error) {
             console.error('Error adding member:', error);
@@ -312,8 +320,9 @@ export function TeamSettings() {
                     </div>
                     {session?.user?.id === teamData?.host.id && (
                         <Button
-                            onClick={() => setShowEmailDialog(true)}
-                            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl transition-all"
+                            onClick={() => { if (atMemberLimit) { setErrorMessage(`Your plan allows up to ${memberLimit} team member(s). Upgrade to add more.`); setShowErrorDialog(true); } else setShowEmailDialog(true); }}
+                            disabled={atMemberLimit}
+                            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-60"
                         >
                             <Plus className="h-4 w-4 mr-2" />
                             Add Member
@@ -526,9 +535,12 @@ export function TeamSettings() {
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogAction onClick={() => setShowErrorDialog(false)}>
-                            OK
-                        </AlertDialogAction>
+                        <AlertDialogAction onClick={() => setShowErrorDialog(false)}>OK</AlertDialogAction>
+                        {errorMessage?.includes('upgrade') && (
+                            <Button onClick={() => { setShowErrorDialog(false); window.location.href = '/pricing'; }} className="bg-blue-600 hover:bg-blue-700">
+                                Upgrade Plan
+                            </Button>
+                        )}
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>

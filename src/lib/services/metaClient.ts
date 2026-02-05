@@ -107,12 +107,20 @@ class MetaAPIClient {
       return fetch(url, options);
     };
 
-    for (let attempt = 0; attempt < 2; attempt++) {
+    const { MetaQuotaRetry } = await import('@/lib/meta-quota-config');
+    const maxAttempts = 4; // 429 needs more retries with backoff
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const response = await doFetch();
       if (response.ok) return this.handleResponse(response);
       const retriable = response.status >= 500 || response.status === 429;
-      if (attempt < 1 && retriable) {
-        await new Promise((r) => setTimeout(r, 2500));
+      if (attempt < maxAttempts - 1 && retriable) {
+        const delay = Math.min(
+          MetaQuotaRetry.INITIAL_MS * Math.pow(MetaQuotaRetry.MULTIPLIER, attempt),
+          MetaQuotaRetry.MAX_MS
+        );
+        console.warn(`[MetaClient] ${response.status} retry ${attempt + 1}/${maxAttempts} in ${delay}ms`);
+        await new Promise((r) => setTimeout(r, delay));
         continue;
       }
       return this.handleResponse(response);

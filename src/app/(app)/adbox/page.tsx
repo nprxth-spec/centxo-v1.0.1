@@ -18,11 +18,11 @@ import {
   X,
   Link2,
   ExternalLink,
+  Check,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
-  fetchPages,
   fetchConversationsFromDB,
   fetchMessagesFromDB,
   sendReply,
@@ -32,7 +32,6 @@ import {
   updateConversationViewer,
   markConversationAsUnread,
 } from '@/app/actions/adbox';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -45,6 +44,10 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAppSettings } from '@/hooks/useAppSettings';
+import { useConfig } from '@/contexts/AdAccountContext';
+import { Checkbox } from '@/components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 
 const createNotificationSound = () => {
   if (typeof window === 'undefined') return null;
@@ -71,17 +74,34 @@ const createNotificationSound = () => {
 export default function AdBoxPage() {
   const { t } = useLanguage();
   const { notificationsEnabled, soundEnabled } = useAppSettings();
+  const { selectedPages: configSelectedPages, loading: configLoading } = useConfig();
 
-  const [hasToken, setHasToken] = useState<boolean | null>(null);
-  const [pages, setPages] = useState<Array<{ id: string; name: string; access_token?: string; picture?: { data?: { url?: string } } }>>([]);
+  // Pages come from Settings > Connections > Ad Accounts > Pages selection
+  const pages = configSelectedPages.map((p) => ({
+    id: p.id,
+    name: p.name,
+    access_token: p.access_token,
+    picture: p.picture,
+  }));
+
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('selectedPageIds');
+      const saved = localStorage.getItem('adbox_selectedPageIds');
       return saved ? JSON.parse(saved) : [];
     }
     return [];
   });
+  const [selectionMode, setSelectionMode] = useState<'single' | 'multi'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('adbox_selectionMode');
+      return (saved === 'single' || saved === 'multi') ? saved : 'multi';
+    }
+    return 'multi';
+  });
   const [tempSelectedPageIds, setTempSelectedPageIds] = useState<string[]>([]);
+  const [tempSelectionMode, setTempSelectionMode] = useState<'single' | 'multi'>('multi');
+
+  const [hasToken, setHasToken] = useState<boolean | null>(null);
   const [conversations, setConversations] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingChat, setLoadingChat] = useState(false);
@@ -97,6 +117,13 @@ export default function AdBoxPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'unread' | 'read'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isInitialized, setIsInitialized] = useState(false);
+  const [adDetails, setAdDetails] = useState<{
+    name: string | null;
+    thumbnailUrl: string | null;
+    title: string | null;
+    body: string | null;
+  } | null>(null);
+  const adDetailsCache = useRef<Record<string, typeof adDetails>>({});
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectedConversationRef = useRef(selectedConversation);
@@ -104,6 +131,8 @@ export default function AdBoxPage() {
   const currentConversationIdRef = useRef<string | null>(null);
   const [messageCache, setMessageCache] = useState<Record<string, Record<string, unknown>[]>>({});
   const notificationSoundRef = useRef<(() => void) | null>(null);
+  const shouldScrollToBottomRef = useRef(true);
+  const lastMessageCountRef = useRef(0);
 
   useEffect(() => {
     selectedConversationRef.current = selectedConversation;
@@ -117,9 +146,6 @@ export default function AdBoxPage() {
     setIsInitialized(true);
   }, []);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('selectedPageIds', JSON.stringify(selectedPageIds));
-  }, [selectedPageIds]);
 
   useEffect(() => {
     notificationSoundRef.current = createNotificationSound();
@@ -141,43 +167,63 @@ export default function AdBoxPage() {
     [notificationsEnabled]
   );
 
-  const loadPages = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await fetchPages();
-      setPages(data);
-      setHasToken(true);
-      if (data.length > 0 && selectedPageIds.length === 0) {
-        const saved = localStorage.getItem('selectedPageIds');
-        if (!saved || JSON.parse(saved).length === 0) setSelectedPageIds([data[0].id]);
-      }
-    } catch (e) {
-      console.error('Failed to load pages', e);
-      setHasToken(false);
-    } finally {
+  useEffect(() => {
+    if (!configLoading) {
+      setHasToken(pages.length > 0);
       setLoading(false);
+    } else {
+      setLoading(true);
     }
-  }, [selectedPageIds.length]);
+  }, [configLoading, pages.length]);
+
+  // Sync selection when pages load - keep only valid ids, init if empty
+  const pageIdsStr = pages.map((p) => p.id).join(',');
+  useEffect(() => {
+    if (pages.length === 0) return;
+    const validIds = new Set(pages.map((p) => p.id));
+    setSelectedPageIds((prev) => {
+      const filtered = prev.filter((id) => validIds.has(id));
+      if (filtered.length === 0) {
+        return selectionMode === 'single' ? [pages[0].id] : pages.map((p) => p.id);
+      }
+      return filtered;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageIdsStr]);
+
+  // Persist selection
+  useEffect(() => {
+    if (typeof window !== 'undefined' && selectedPageIds.length > 0) {
+      localStorage.setItem('adbox_selectedPageIds', JSON.stringify(selectedPageIds));
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('adbox_selectionMode', selectionMode);
+    }
+  }, [selectedPageIds, selectionMode]);
+
+  // Effective page ids for loading (single = first only, multi = all selected)
+  const effectivePageIds = selectionMode === 'single' && selectedPageIds.length > 0
+    ? [selectedPageIds[0]]
+    : selectedPageIds.filter((id) => pages.some((p) => p.id === id));
 
   useEffect(() => {
-    loadPages();
-  }, []);
-
-  useEffect(() => {
-    if (selectedPageIds.length > 0 && hasToken) {
-      loadConversations(selectedPageIds, true);
+    if (effectivePageIds.length > 0 && hasToken) {
+      loadConversations(effectivePageIds, true);
     } else {
       setConversations([]);
     }
-  }, [selectedPageIds, hasToken]);
+  }, [effectivePageIds.join(','), hasToken]);
 
   useEffect(() => {
     if (selectedConversation && hasToken) {
       currentConversationIdRef.current = (selectedConversation.id as string) || null;
-      if (messageCache[selectedConversation.id as string]) {
-        setMessages(messageCache[selectedConversation.id as string]);
+      const cached = messageCache[selectedConversation.id as string];
+      if (cached) {
+        setMessages(cached);
+        lastMessageCountRef.current = cached.length;
       } else {
         setMessages([]);
+        lastMessageCountRef.current = 0;
       }
       loadMessages(
         selectedConversation.id as string,
@@ -191,26 +237,67 @@ export default function AdBoxPage() {
           )
         );
       });
+      updateConversationViewer(selectedConversation.id as string);
     }
   }, [selectedConversation?.id, hasToken]);
 
+  // Fetch ad details when conversation has adId (to show which ad post customer messaged from)
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const adId = selectedConversation?.adId as string | undefined;
+    if (!adId) {
+      setAdDetails(null);
+      return;
+    }
+    const cached = adDetailsCache.current[adId];
+    if (cached) {
+      setAdDetails(cached);
+      return;
+    }
+    setAdDetails(null);
+    fetch(`/api/adbox/ad/${encodeURIComponent(adId)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ad) {
+          const details = {
+            name: data.ad.name || null,
+            thumbnailUrl: data.ad.thumbnailUrl || null,
+            title: data.ad.title || null,
+            body: data.ad.body || null,
+          };
+          adDetailsCache.current[adId] = details;
+          if (selectedConversationRef.current?.adId === adId) {
+            setAdDetails(details);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [selectedConversation?.adId]);
+
+  // Only scroll to bottom when appropriate (not on every poll refresh)
+  useEffect(() => {
+    if (!scrollRef.current || !shouldScrollToBottomRef.current) return;
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    shouldScrollToBottomRef.current = false;
   }, [messages]);
 
+  // Reset scroll-to-bottom when switching conversation
   useEffect(() => {
-    if (isDialogOpen) setTempSelectedPageIds(selectedPageIds);
-  }, [isDialogOpen, selectedPageIds]);
+    if (selectedConversation) {
+      shouldScrollToBottomRef.current = true;
+      lastMessageCountRef.current = 0;
+    }
+  }, [selectedConversation?.id]);
 
   useEffect(() => {
-    if (selectedPageIds.length === 0 || !isInitialized || !hasToken) return;
+    if (effectivePageIds.length === 0 || !isInitialized || !hasToken) return;
     let isActive = true;
     let lastSyncTime = new Date(Date.now() - 120000).toISOString();
+    const SYNC_POLL_MS = 3000;
     const poll = async () => {
       if (!isActive) return;
       try {
         const res = await fetch(
-          `/api/messages/sync-new?pageIds=${selectedPageIds.join(',')}&since=${lastSyncTime}`
+          `/api/messages/sync-new?pageIds=${effectivePageIds.join(',')}&since=${lastSyncTime}`
         );
         if (res.ok) {
           const data = await res.json();
@@ -239,21 +326,29 @@ export default function AdBoxPage() {
                   (pageId && participantId && m.pageId === pageId && m.senderId === participantId)
               );
               if (belongsToOpenChat && convId) {
+                shouldScrollToBottomRef.current = true;
                 fetchMessagesFromDB(convId).then((fresh) => {
                   if (currentConversationIdRef.current === convId) {
                     setMessages(fresh);
                     setMessageCache((prev) => ({ ...prev, [convId]: fresh }));
+                    lastMessageCountRef.current = fresh.length;
                   }
                 });
               }
             }
           }
           if (data.updatedConversations?.length > 0) {
+            const cur = selectedConversationRef.current;
+            for (const conv of data.updatedConversations) {
+              if (cur?.id === conv.id) {
+                setSelectedConversation((s) => (s?.id === conv.id ? { ...s, ...conv } : s));
+                break;
+              }
+            }
             setConversations((prev) => {
               const updated = [...prev];
               for (const conv of data.updatedConversations) {
                 const idx = updated.findIndex((c) => c.id === conv.id);
-                const cur = selectedConversationRef.current;
                 const unread = cur?.id === conv.id ? 0 : conv.unread_count;
                 if (idx >= 0) {
                   updated[idx] = { ...updated[idx], ...conv, unread_count: unread };
@@ -270,7 +365,7 @@ export default function AdBoxPage() {
           }
         }
       } catch {}
-      if (isActive) setTimeout(poll, 1000);
+      if (isActive) setTimeout(poll, SYNC_POLL_MS);
     };
     poll();
     return () => {
@@ -284,26 +379,36 @@ export default function AdBoxPage() {
     if (!convId || !pageId || !hasToken) return;
     let isActive = true;
     let liveSyncCount = 0;
+    const POLL_INTERVAL = 2500;
     const fastPoll = async () => {
       if (!isActive || currentConversationIdRef.current !== convId) return;
       try {
         const url =
-          liveSyncCount % 5 === 0
+          liveSyncCount % 4 === 0
             ? `/api/adbox/messages/live?conversationId=${encodeURIComponent(convId)}&pageId=${encodeURIComponent(pageId)}`
             : `/api/adbox/messages?conversationId=${encodeURIComponent(convId)}`;
         const res = await fetch(url);
         if (res.ok) {
           const { messages: fresh } = await res.json();
           if (Array.isArray(fresh) && isActive && currentConversationIdRef.current === convId) {
+            const prevCount = lastMessageCountRef.current;
+            const newCount = fresh.length;
+            const hasNewMessages = newCount > prevCount;
             setMessages(fresh);
             setMessageCache((c) => ({ ...c, [convId]: fresh }));
+            lastMessageCountRef.current = newCount;
+            if (hasNewMessages && scrollRef.current) {
+              const el = scrollRef.current;
+              const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+              if (nearBottom) shouldScrollToBottomRef.current = true;
+            }
           }
         }
         liveSyncCount += 1;
       } catch {}
-      if (isActive) setTimeout(fastPoll, 1000);
+      if (isActive) setTimeout(fastPoll, POLL_INTERVAL);
     };
-    const t = setTimeout(fastPoll, 400);
+    const t = setTimeout(fastPoll, 500);
     return () => {
       isActive = false;
       clearTimeout(t);
@@ -325,12 +430,7 @@ export default function AdBoxPage() {
     if (forceSync) {
       const syncTask = async () => {
         try {
-          let pagesData = pages;
-          if (pagesData.length === 0) {
-            pagesData = await fetchPages();
-            setPages(pagesData);
-          }
-          const selectedPages = pagesData.filter((p) => pageIds.includes(p.id));
+          const selectedPages = pages.filter((p) => pageIds.includes(p.id));
           if (selectedPages.length === 0) {
             setToastMessage('No pages selected. Please select pages first.');
             setTimeout(() => setToastMessage(null), 4000);
@@ -364,6 +464,7 @@ export default function AdBoxPage() {
       if (dbData.length > 0) {
         setMessages(dbData);
         setMessageCache((prev) => ({ ...prev, [conversationId]: dbData }));
+        lastMessageCountRef.current = dbData.length;
         hasData = true;
         setLoadingMessages(false);
       } else {
@@ -381,6 +482,7 @@ export default function AdBoxPage() {
           if (updated.length > 0) {
             setMessages(updated);
             setMessageCache((prev) => ({ ...prev, [conversationId]: updated }));
+            lastMessageCountRef.current = updated.length;
           }
         } catch {}
         if (currentConversationIdRef.current === conversationId && !hasData)
@@ -397,6 +499,7 @@ export default function AdBoxPage() {
     const currentReply = replyText;
     setReplyText('');
     setSending(true);
+    shouldScrollToBottomRef.current = true;
     const optimisticMsg = {
       id: `temp-${Date.now()}`,
       message: currentReply,
@@ -449,21 +552,40 @@ export default function AdBoxPage() {
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'U')}&background=${c.bg}&color=${c.fg}&size=100`;
   };
 
-  const toggleTempPageSelection = (pageId: string) => {
-    setTempSelectedPageIds((prev) =>
-      prev.includes(pageId) ? prev.filter((id) => id !== pageId) : [...prev, pageId]
-    );
+  const getPageDetails = (pageId: string) => pages.find((p) => p.id === pageId);
+
+  const handleOpenSelectDialog = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (open) {
+      setTempSelectedPageIds([...selectedPageIds]);
+      setTempSelectionMode(selectionMode);
+    }
   };
+
+  const toggleTempPage = (pageId: string) => {
+    if (tempSelectionMode === 'single') {
+      setTempSelectedPageIds([pageId]);
+    } else {
+      setTempSelectedPageIds((prev) =>
+        prev.includes(pageId) ? prev.filter((id) => id !== pageId) : [...prev, pageId]
+      );
+    }
+  };
+
   const toggleTempSelectAll = () => {
-    setTempSelectedPageIds(
-      tempSelectedPageIds.length === pages.length ? [] : pages.map((p) => p.id)
-    );
+    if (tempSelectedPageIds.length === pages.length) {
+      setTempSelectedPageIds([]);
+    } else {
+      setTempSelectedPageIds(pages.map((p) => p.id));
+    }
   };
-  const handleSaveSelection = () => {
-    setSelectedPageIds(tempSelectedPageIds);
+
+  const handleSavePageSelection = () => {
+    const ids = tempSelectedPageIds.length > 0 ? tempSelectedPageIds : (pages[0] ? [pages[0].id] : []);
+    setSelectedPageIds(ids);
+    setSelectionMode(tempSelectionMode);
     setIsDialogOpen(false);
   };
-  const getPageDetails = (pageId: string) => pages.find((p) => p.id === pageId);
 
   const formatTime = (dateString: string) => {
     if (!dateString) return '';
@@ -503,13 +625,17 @@ export default function AdBoxPage() {
     );
   }
 
-  if (!hasToken) {
+  if (!hasToken && !configLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 px-4">
         <MessageCircle className="h-16 w-16 text-muted-foreground" />
-        <h2 className="text-xl font-semibold">{t('adbox.connectFacebook')}</h2>
-        <p className="text-muted-foreground text-center max-w-md">{t('adbox.connectDescription')}</p>
-        <Link href="/settings/connections">
+        <h2 className="text-xl font-semibold">{pages.length === 0 ? t('adbox.selectPages') : t('adbox.connectFacebook')}</h2>
+        <p className="text-muted-foreground text-center max-w-md">
+          {pages.length === 0
+            ? 'Select pages in Settings > Connections > Ad Accounts to manage Messenger conversations.'
+            : t('adbox.connectDescription')}
+        </p>
+        <Link href="/settings/connections?tab=ad-accounts&view=pages">
           <Button>Go to Settings</Button>
         </Link>
       </div>
@@ -560,7 +686,7 @@ export default function AdBoxPage() {
                   <Link2 className="h-4 w-4" />
                 </Button>
               </Link>
-              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <Dialog open={isDialogOpen} onOpenChange={handleOpenSelectDialog}>
                 <DialogTrigger asChild>
                   <Button variant="ghost" size="icon" title="Select pages">
                     <Settings className="h-4 w-4" />
@@ -569,40 +695,90 @@ export default function AdBoxPage() {
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>{t('adbox.selectPages')}</DialogTitle>
-                    <DialogDescription>{t('adbox.choosePages')}</DialogDescription>
+                    <DialogDescription>
+                      Choose Single page or Multi pages. Pages are from Settings.
+                    </DialogDescription>
                   </DialogHeader>
-                  <div className="py-4">
-                    <div className="flex justify-between mb-4">
-                      <span className="text-sm text-muted-foreground">
-                        {pages.length} {t('adbox.pagesAvailable')}
-                      </span>
-                      <Button variant="ghost" size="sm" onClick={toggleTempSelectAll}>
-                        {tempSelectedPageIds.length === pages.length
-                          ? t('adbox.deselectAll')
-                          : t('adbox.selectAll')}
-                      </Button>
+                  <div className="py-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Link href="/settings/connections?tab=ad-accounts&view=pages">
+                        <Button variant="outline" size="sm">
+                          <Settings className="h-4 w-4 mr-2" />
+                          Manage in Settings
+                        </Button>
+                      </Link>
                     </div>
-                    <ScrollArea className="h-[300px]">
+                    <RadioGroup
+                      value={tempSelectionMode}
+                      onValueChange={(v) => {
+                        const mode = v as 'single' | 'multi';
+                        setTempSelectionMode(mode);
+                        if (mode === 'single' && tempSelectedPageIds.length > 1) {
+                          setTempSelectedPageIds([tempSelectedPageIds[0]]);
+                        }
+                      }}
+                      className="flex gap-6"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="single" id="single" />
+                        <Label htmlFor="single" className="cursor-pointer font-normal">Single page</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="multi" id="multi" />
+                        <Label htmlFor="multi" className="cursor-pointer font-normal">Multi pages</Label>
+                      </div>
+                    </RadioGroup>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">
+                        {tempSelectedPageIds.length} of {pages.length} selected
+                      </span>
+                      {tempSelectionMode === 'multi' && (
+                        <Button variant="ghost" size="sm" onClick={toggleTempSelectAll}>
+                          {tempSelectedPageIds.length === pages.length ? 'Deselect all' : 'Select all'}
+                        </Button>
+                      )}
+                    </div>
+                    <ScrollArea className="h-[260px]">
                       <div className="space-y-2">
-                        {pages.map((page) => (
-                          <div
-                            key={page.id}
-                            className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer border transition-colors ${
-                              tempSelectedPageIds.includes(page.id) ? 'bg-primary/10 border-primary/30' : 'hover:bg-muted'
-                            }`}
-                            onClick={() => toggleTempPageSelection(page.id)}
-                          >
-                            <Checkbox
-                              checked={tempSelectedPageIds.includes(page.id)}
-                              onCheckedChange={() => toggleTempPageSelection(page.id)}
-                            />
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={page.picture?.data?.url} />
-                              <AvatarFallback>{page.name.charAt(0)}</AvatarFallback>
-                            </Avatar>
-                            <span className="font-medium truncate text-sm">{page.name}</span>
+                        {pages.length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground text-sm">
+                            No pages selected. Go to Settings to select pages.
                           </div>
-                        ))}
+                        ) : (
+                          pages.map((page) => {
+                            const isSelected = tempSelectedPageIds.includes(page.id);
+                            return (
+                              <div
+                                key={page.id}
+                                className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                                  isSelected ? 'bg-primary/10 border-primary/30' : 'hover:bg-muted/50'
+                                }`}
+                                onClick={() => toggleTempPage(page.id)}
+                              >
+                                {tempSelectionMode === 'single' ? (
+                                  <div
+                                    className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${
+                                      isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40'
+                                    }`}
+                                  />
+                                ) : (
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() => toggleTempPage(page.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex-shrink-0"
+                                  />
+                                )}
+                                <Avatar className="h-8 w-8">
+                                  <AvatarImage src={(page.picture as { data?: { url?: string } })?.data?.url} />
+                                  <AvatarFallback>{page.name.charAt(0)}</AvatarFallback>
+                                </Avatar>
+                                <span className="font-medium truncate text-sm flex-1">{page.name}</span>
+                                {isSelected && <Check className="h-4 w-4 text-green-500 flex-shrink-0" />}
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     </ScrollArea>
                   </div>
@@ -610,14 +786,16 @@ export default function AdBoxPage() {
                     <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
                       {t('adbox.cancel')}
                     </Button>
-                    <Button onClick={handleSaveSelection}>{t('adbox.applyChanges')}</Button>
+                    <Button onClick={handleSavePageSelection} disabled={tempSelectedPageIds.length === 0}>
+                      Apply
+                    </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => loadConversations(selectedPageIds, true)}
+                onClick={() => loadConversations(effectivePageIds, true)}
                 disabled={loadingChat}
               >
                 <RefreshCw className={`h-4 w-4 ${loadingChat ? 'animate-spin' : ''}`} />
@@ -780,6 +958,57 @@ export default function AdBoxPage() {
                 ref={scrollRef}
                 style={{ minHeight: 0 }}
               >
+                {(selectedConversation.adId as string) && (
+                  <div className="rounded-lg bg-primary/10 border border-primary/20 text-sm mb-3 overflow-hidden">
+                    <div className="flex items-start gap-3 p-3">
+                      {adDetails?.thumbnailUrl ? (
+                        <img
+                          src={adDetails.thumbnailUrl}
+                          alt=""
+                          className="w-16 h-16 rounded object-cover flex-shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                          <Megaphone className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-muted-foreground mb-0.5">
+                          {t('adbox.fromAd', 'From Ad')} · ID: {selectedConversation.adId as string}
+                        </p>
+                        <p className="font-medium text-foreground truncate">
+                          {adDetails?.name || adDetails?.title || t('adbox.adPost', 'Ad post')}
+                        </p>
+                        {adDetails?.body && (
+                          <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                            {adDetails.body}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-3 pb-2 pt-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedConversation.adId as string);
+                          setToastMessage(`Ad ID copied: ${selectedConversation.adId}`);
+                          setTimeout(() => setToastMessage(null), 2000);
+                        }}
+                        className="text-primary hover:underline text-xs"
+                      >
+                        Copy ID
+                      </button>
+                      <Link
+                        href={`/ads-manager/campaigns?adId=${selectedConversation.adId}`}
+                        className="text-primary hover:underline text-xs flex items-center gap-1"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        View in Ads
+                      </Link>
+                    </div>
+                  </div>
+                )}
                 {loadingMessages && messages.length === 0 ? (
                   <div className="flex justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

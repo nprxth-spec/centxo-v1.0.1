@@ -178,6 +178,21 @@ export const authOptions: NextAuthOptions = {
                     const fbName = fbProfile?.name || user.name || 'Facebook User';
                     const fbEmail = fbProfile?.email || user.email || undefined;
 
+                    // Exchange short-lived token for long-lived (~60 days)
+                    let accessToken = account.access_token;
+                    let expiresAt: Date;
+                    try {
+                        const { exchangeForLongLivedToken } = await import('@/lib/facebook/token-helper');
+                        const { accessToken: longLived, expiresIn } = await exchangeForLongLivedToken(account.access_token);
+                        accessToken = longLived;
+                        expiresAt = new Date(Date.now() + expiresIn * 1000);
+                    } catch (err) {
+                        console.warn('Token exchange failed, using short-lived token:', err);
+                        expiresAt = account.expires_at
+                            ? new Date(account.expires_at * 1000)
+                            : new Date(Date.now() + 2 * 60 * 60 * 1000); // 2h fallback
+                    }
+
                     // 1. Create/update MetaAccount
                     const existingMetaAccount = await prisma.metaAccount.findUnique({
                         where: { userId: user.id },
@@ -186,11 +201,7 @@ export const authOptions: NextAuthOptions = {
                     if (!existingMetaAccount) {
                         try {
                             const { encryptToken } = await import('@/lib/services/metaClient');
-                            const encryptedToken = encryptToken(account.access_token);
-                            const expiresAt = account.expires_at
-                                ? new Date(account.expires_at * 1000)
-                                : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
-
+                            const encryptedToken = encryptToken(accessToken);
                             await prisma.metaAccount.create({
                                 data: {
                                     userId: user.id,
@@ -206,17 +217,13 @@ export const authOptions: NextAuthOptions = {
                     }
 
                     // 2. Create/update TeamMember so Facebook account shows in "Facebook Accounts"
-                    const expiresAt = account.expires_at
-                        ? new Date(account.expires_at * 1000)
-                        : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
-
                     await prisma.teamMember.upsert({
                         where: { facebookUserId: account.providerAccountId },
                         update: {
                             userId: user.id,
                             facebookName: fbName,
                             facebookEmail: fbEmail ?? undefined,
-                            accessToken: account.access_token,
+                            accessToken,
                             accessTokenExpires: expiresAt,
                             role: 'MEMBER',
                             updatedAt: new Date(),
@@ -227,7 +234,7 @@ export const authOptions: NextAuthOptions = {
                             facebookUserId: account.providerAccountId,
                             facebookName: fbName,
                             facebookEmail: fbEmail ?? undefined,
-                            accessToken: account.access_token,
+                            accessToken,
                             accessTokenExpires: expiresAt,
                             role: 'MEMBER',
                         },

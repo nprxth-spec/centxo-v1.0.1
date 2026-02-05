@@ -95,15 +95,20 @@ interface ConfigContextType {
   loading: boolean;
   error: string | null;
   refreshData: (force?: boolean, options?: { bypassCooldown?: boolean }) => Promise<void>;
+
+  // Plan limits (ad accounts, pages, team members)
+  planLimits: { adAccounts: number; pages: number; teamMembers: number; facebookAccounts: number };
 }
 
 // Create context with proper initial value
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 
-// Cache duration in milliseconds (60 minutes) - reduces Meta API rate limit usage
-const CACHE_DURATION = 60 * 60 * 1000;
-// Manual Refresh cooldown (10 minutes) - prevent unnecessary API calls when user clicks Refresh repeatedly
-const REFRESH_COOLDOWN = 10 * 60 * 1000;
+import { MetaQuotaClient } from '@/lib/meta-quota-config';
+import { getPlanLimits, getAdAccountLimit, getPageLimit, getTeamMemberLimit } from '@/lib/plan-limits';
+
+// Cache + cooldown from meta-quota-config (500+ user scale)
+const CACHE_DURATION = MetaQuotaClient.CACHE_DURATION_MS;
+const REFRESH_COOLDOWN = MetaQuotaClient.REFRESH_COOLDOWN_MS;
 
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const { data: session } = useSession();
@@ -133,15 +138,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     }
   }, [session]);
 
-  const getPlanLimit = (plan: string) => {
-    // Temporarily allow all plans to use full features (no ad account limit)
-    return 999;
-    // switch (plan) {
-    //   case 'PRO': return 50;
-    //   case 'PLUS': return 20;
-    //   default: return 10;
-    // }
-  };
+  const getPlanLimit = (plan: string) => getAdAccountLimit(plan);
 
   // Initialize state from localStorage immediately to prevent race conditions
   const [selectedAccounts, setSelectedAccountsState] = useState<AdAccount[]>(() => {
@@ -427,6 +424,10 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   };
 
   const setSelectedPages = (p: Page[]) => {
+    const pageLimit = getPageLimit(userPlan);
+    if (p.length > pageLimit) {
+      p = p.slice(0, pageLimit);
+    }
     setSelectedPagesState(p);
     localStorage.setItem('selectedPages', JSON.stringify(p));
   };
@@ -457,10 +458,15 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const togglePage = (page: Page) => {
     const isSelected = selectedPages.some(p => p.id === page.id);
     let newSelected: Page[];
+    const pageLimit = getPageLimit(userPlan);
 
     if (isSelected) {
       newSelected = selectedPages.filter(p => p.id !== page.id);
     } else {
+      if (selectedPages.length >= pageLimit) {
+        // Could show dialog similar to account limit
+        return;
+      }
       newSelected = [...selectedPages, page];
     }
 
@@ -507,7 +513,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         businessAccounts,
         loading,
         error,
-        refreshData
+        refreshData,
+        planLimits: getPlanLimits(userPlan),
       }}
     >
       {children}

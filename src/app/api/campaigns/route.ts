@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { rateLimit, RateLimitPresets } from '@/lib/middleware/rateLimit';
-import { campaignsQuerySchema, validateQueryParams } from '@/lib/validation';
 import { withCache, withCacheSWR, generateCacheKey, CacheTTL, deleteCache } from '@/lib/cache/redis';
 import { TokenInfo, getValidTokenForAdAccount } from '@/lib/facebook/token-helper';
 import { decryptToken } from '@/lib/services/metaClient';
+import { getApiAccountCap, getLiteModeThreshold, getDynamicChunkSize, getDynamicChunkDelayMs } from '@/lib/plan-limits';
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Ad account ID required' }, { status: 400 });
     }
 
-    const adAccountIds = adAccountIdsParam.split(',').filter(Boolean);
+    let adAccountIds = adAccountIdsParam.split(',').filter(Boolean);
 
     // Get date range parameters
     const dateFrom = searchParams.get('dateFrom');
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
       console.log('[campaigns] User is team member, fetching owner tokens from:', teamOwnerId);
     }
 
-    // Fetch team owner's data (MetaAccount + Facebook accounts)
+    // Fetch team owner's data (MetaAccount + Facebook accounts) - plan comes from owner
     const teamOwner = await prisma.user.findUnique({
       where: { id: teamOwnerId },
       include: {
@@ -158,19 +158,34 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Plan-based cap and auto lite mode
+    const plan = (teamOwner as any)?.plan || (user as any)?.plan || 'FREE';
+    const cap = getApiAccountCap(plan);
+    if (adAccountIds.length > cap) {
+      adAccountIds = adAccountIds.slice(0, cap);
+    }
+    const modeParam = searchParams.get('mode'); // 'lite' or undefined (full)
+    const effectiveMode = modeParam || (adAccountIds.length > getLiteModeThreshold(plan) ? 'lite' : undefined);
+
     // Check for force refresh
     const forceRefresh = searchParams.get('refresh') === 'true';
-    const mode = searchParams.get('mode'); // 'lite' or undefined (full)
+    const mode = effectiveMode;
     const limitParam = searchParams.get('limit');
-    const limit = limitParam ? Math.min(500, Math.max(1, parseInt(limitParam, 10) || 10)) : undefined;
+    const limit = limitParam ? Math.min(500, Math.max(1, parseInt(limitParam, 10) || 50)) : 50;
+    const offsetParam = searchParams.get('offset');
+    const offset = offsetParam ? Math.max(0, parseInt(offsetParam, 10) || 0) : 0;
 
-    // Create cache key
-    const CACHE_VERSION = 'v2';
+    // Paginated mode: first page only from Meta (fast). Non-paginated: fetch all (legacy).
+    const PAGE_SIZE = 50;
+    const usePaginated = typeof limit === 'number' && limit <= 500;
+
+    // Create cache key (first-page cache for paginated mode)
+    const CACHE_VERSION = 'v3'; // v3: paginated first-page fetch
     const dateRangeKey = dateFrom && dateTo ? `${dateFrom}_${dateTo}` : 'all';
     const cacheKey = generateCacheKey(
       `meta:campaigns:${CACHE_VERSION}`,
       session.user.id!,
-      `${adAccountIds.sort().join(',')}:${dateRangeKey}:${mode || 'full'}:${limit ?? 'all'}`
+      `${adAccountIds.sort().join(',')}:${dateRangeKey}:${mode || 'full'}:${usePaginated ? 'fp' : 'all'}`
     );
 
     // Delete cache if force refresh
@@ -179,26 +194,28 @@ export async function GET(request: NextRequest) {
       await deleteCache(`${cacheKey}:meta`);
     }
 
-    // Fetch campaigns with SWR
+    // Fetch campaigns with SWR (first page only when paginated = fast)
     const STALE_TTL = 3600;
     const result = await withCacheSWR(
       cacheKey,
       CacheTTL.CAMPAIGNS_LIST,
       STALE_TTL,
       async () => {
-        return await fetchCampaignsFromMeta(adAccountIds, tokens, dateFrom, dateTo, mode);
+        const chunkSize = getDynamicChunkSize(adAccountIds.length);
+        const chunkDelayMs = getDynamicChunkDelayMs(adAccountIds.length);
+        return await fetchCampaignsFromMeta(adAccountIds, tokens, dateFrom, dateTo, mode, usePaginated, chunkSize, chunkDelayMs);
       }
     );
 
-    let campaigns = result.data.campaigns;
-    if (typeof limit === 'number' && limit > 0 && campaigns.length > limit) {
-      campaigns = campaigns.slice(0, limit);
-    }
+    const allCampaigns = result.data.campaigns;
+    const total = allCampaigns.length;
+    const campaigns = allCampaigns.slice(offset, offset + limit);
 
     return NextResponse.json({
       campaigns,
-      total: result.data.campaigns.length,
+      total,
       returned: campaigns.length,
+      hasMore: offset + campaigns.length < total,
       errors: result.data.errors,
       isStale: result.isStale,
       revalidating: result.revalidating,
@@ -241,7 +258,24 @@ async function fetchAllPages(initialUrl: string, token: string): Promise<any[]> 
   return allData;
 }
 
-async function fetchCampaignsFromMeta(adAccountIds: string[], tokens: TokenInfo[], dateFrom?: string | null, dateTo?: string | null, mode?: string | null) {
+// Fetch only first page (fast, for paginated UI)
+async function fetchFirstPage(initialUrl: string): Promise<any[]> {
+  const res = await fetch(initialUrl);
+  if (!res.ok) throw new Error(`Failed to fetch: ${res.statusText}`);
+  const data: any = await res.json();
+  return Array.isArray(data.data) ? data.data : [];
+}
+
+async function fetchCampaignsFromMeta(
+  adAccountIds: string[],
+  tokens: TokenInfo[],
+  dateFrom?: string | null,
+  dateTo?: string | null,
+  mode?: string | null,
+  firstPageOnly = false,
+  chunkSize = 10,
+  chunkDelayMs = 100
+) {
   const allCampaigns: any[] = [];
   const errors: string[] = [];
 
@@ -255,11 +289,8 @@ async function fetchCampaignsFromMeta(adAccountIds: string[], tokens: TokenInfo[
     insightsTimeRange = `time_range({'since':'${since}','until':'${until}'})`;
   }
 
-  // Chunk requests to avoid rate limiting
-  const CHUNK_SIZE = 5; // Reduced for safety
-
-  for (let i = 0; i < adAccountIds.length; i += CHUNK_SIZE) {
-    const chunk = adAccountIds.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < adAccountIds.length; i += chunkSize) {
+    const chunk = adAccountIds.slice(i, i + chunkSize);
 
     await Promise.all(chunk.map(async (adAccountId) => {
       try {
@@ -274,9 +305,8 @@ async function fetchCampaignsFromMeta(adAccountIds: string[], tokens: TokenInfo[
         // Fetch Data using the found token
         // Lite Mode: Skip Insights, Skip AdSets, Minimal Fields
         if (mode === 'lite') {
-          // Pagination for Lite Mode
           const initialUrl = `https://graph.facebook.com/v22.0/${adAccountId}/campaigns?fields=id,name,status,effective_status,configured_status,created_time&limit=200&access_token=${token}`;
-          const campaigns = await fetchAllPages(initialUrl, token);
+          const campaigns = firstPageOnly ? await fetchFirstPage(initialUrl) : await fetchAllPages(initialUrl, token);
 
           const formatted = campaigns.map((campaign: any) => ({
             id: campaign.id,
@@ -301,9 +331,9 @@ async function fetchCampaignsFromMeta(adAccountIds: string[], tokens: TokenInfo[
           )
         ]);
 
-        // Campaigns fetch with pagination
+        // Campaigns fetch (first page only when paginated = fast)
         const initialUrl = `https://graph.facebook.com/v22.0/${adAccountId}/campaigns?fields=id,name,status,effective_status,configured_status,objective,daily_budget,lifetime_budget,spend_cap,issues_info,adsets{effective_status,ads{effective_status}},created_time,insights.${insightsTimeRange}{spend,actions,cost_per_action_type,reach,impressions,clicks}&limit=200&access_token=${token}`;
-        const campaigns = await fetchAllPages(initialUrl, token);
+        const campaigns = firstPageOnly ? await fetchFirstPage(initialUrl) : await fetchAllPages(initialUrl, token);
 
         let accountCurrency = 'USD';
         if (accountResponse.ok) {
@@ -381,9 +411,8 @@ async function fetchCampaignsFromMeta(adAccountIds: string[], tokens: TokenInfo[
       }
     }));
 
-    // Add small delay between chunks to respect rate limits
-    if (i + CHUNK_SIZE < adAccountIds.length) {
-      await new Promise(resolve => setTimeout(resolve, 200));
+    if (i + chunkSize < adAccountIds.length) {
+      await new Promise(resolve => setTimeout(resolve, chunkDelayMs));
     }
   }
 

@@ -1,40 +1,58 @@
-
 'use client';
 
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Check, Loader2 } from 'lucide-react';
-import { PLANS } from '@/lib/stripe'; // Make sure this is importable by client, or duplicate for safe client usage
-// Note: importing PLANS directly from lib/stripe might carry Node dependencies if not careful. 
-// Ideally PLANS should be in shared config. For now, assuming it's safe or I'll redefine here for UI.
+import { Check, Loader2, Building2, Users, FileText } from 'lucide-react';
+import { PLAN_LIMITS } from '@/lib/plan-limits';
 
-// Redefining for UI safety to avoid "fs" issues on client
 const PRICING_PLANS = [
     {
-        name: 'FREE',
+        name: 'FREE' as const,
         price: 0,
-        description: 'For individuals just getting started.',
-        features: ['10 Ad Accounts', 'Basic Analytics', 'Standard Support'],
-        limit: '10 Ad Accounts',
+        originalPrice: undefined as number | undefined,
+        description: 'For individuals just getting started with Facebook Ads.',
+        details: [
+            'Campaign, Ad Set, and Ad management',
+            'Basic analytics and spend overview',
+            'Dashboard with key metrics',
+            'Standard support (email)',
+            'Single user only',
+        ],
+        highlight: false,
     },
     {
-        name: 'PLUS',
+        name: 'PLUS' as const,
         price: 39,
         originalPrice: 99,
-        description: 'For growing businesses and agencies.',
-        features: ['20 Ad Accounts', 'Advanced Analytics', 'Priority Support', 'AI Optimization'],
-        limit: '20 Ad Accounts',
+        description: 'For growing businesses and agencies managing multiple accounts.',
+        details: [
+            'Everything in FREE, plus:',
+            'Advanced analytics and reporting',
+            'AI-powered optimization suggestions',
+            'Priority support (faster response)',
+            'Team collaboration (up to 3 members)',
+            'Adbox: Messenger inbox management',
+            'Google Sheets export',
+        ],
         highlight: true,
     },
     {
-        name: 'PRO',
+        name: 'PRO' as const,
         price: 99,
         originalPrice: 199,
-        description: 'For power users and large teams.',
-        features: ['50 Ad Accounts', 'Enterprise Analytics', 'Dedicated Support', 'Early Access Features'],
-        limit: '50 Ad Accounts',
+        description: 'For power users and large teams with high-volume advertising.',
+        details: [
+            'Everything in PLUS, plus:',
+            'Enterprise-level analytics',
+            'Dedicated support (priority queue)',
+            'Early access to new features',
+            'Larger teams (up to 10 members)',
+            'More ad accounts and pages',
+            'Higher API quota for faster loading',
+        ],
+        highlight: false,
     },
 ];
 
@@ -111,16 +129,26 @@ export default function PricingPage() {
                                 <p className="text-sm text-muted-foreground">{plan.description}</p>
                             </div>
 
-                            <div className="flex-1 mb-8">
-                                <div className="text-sm font-medium mb-4 flex items-center gap-2">
-                                    <Check className="w-4 h-4 text-blue-500" />
-                                    {plan.limit}
+                            <div className="flex-1 mb-8 space-y-4">
+                                <div className="flex flex-col gap-2 text-sm font-medium text-muted-foreground">
+                                    <div className="flex items-center gap-2">
+                                        <Building2 className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                        {PLAN_LIMITS[plan.name].adAccounts} Ad Account{PLAN_LIMITS[plan.name].adAccounts !== 1 ? 's' : ''}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                        {PLAN_LIMITS[plan.name].pages} Page{PLAN_LIMITS[plan.name].pages !== 1 ? 's' : ''}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Users className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                        {PLAN_LIMITS[plan.name].teamMembers} Team Member{PLAN_LIMITS[plan.name].teamMembers !== 1 ? 's' : ''}
+                                    </div>
                                 </div>
-                                <ul className="space-y-3">
-                                    {plan.features.map((feature, i) => (
+                                <ul className="space-y-2">
+                                    {plan.details.map((item, i) => (
                                         <li key={i} className="flex items-start gap-3 text-sm text-zinc-600 dark:text-zinc-400">
                                             <Check className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                                            {feature}
+                                            {item}
                                         </li>
                                     ))}
                                 </ul>

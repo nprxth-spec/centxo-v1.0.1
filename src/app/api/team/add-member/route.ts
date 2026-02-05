@@ -1,15 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { getFacebookAccountLimit } from '@/lib/plan-limits';
 
 export async function GET(req: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
 
-        if (!session?.user?.email) {
+        if (!session?.user?.email || !session.user.id) {
             return NextResponse.json(
                 { error: 'Unauthorized' },
                 { status: 401 }
+            );
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: session.user.id },
+            select: { plan: true },
+        });
+        const plan = user?.plan || 'FREE';
+        const limit = getFacebookAccountLimit(plan);
+
+        const facebookMemberCount = await prisma.teamMember.count({
+            where: { userId: session.user.id, memberType: 'facebook' },
+        });
+        if (facebookMemberCount >= limit) {
+            return NextResponse.json(
+                { error: `Your plan allows up to ${limit} Facebook account(s). Please upgrade to add more.`, limitReached: true },
+                { status: 403 }
             );
         }
 

@@ -40,16 +40,37 @@ export async function GET(req: NextRequest) {
       hostId = membershipTeam.userId;
     }
 
-    const count = await prisma.teamMember.count({
+    // Must have at least one TeamMember with valid (non-expired) token - matches team/config logic
+    const validMembers = await prisma.teamMember.findMany({
       where: {
         userId: hostId,
         memberType: 'facebook',
         facebookUserId: { not: null },
         accessToken: { not: null },
+        OR: [
+          { accessTokenExpires: null },
+          { accessTokenExpires: { gt: new Date() } },
+        ],
       },
+      select: { id: true },
     });
 
-    return NextResponse.json({ hasMembers: count > 0 });
+    if (validMembers.length > 0) {
+      return NextResponse.json({ hasMembers: true });
+    }
+
+    // Fallback: MetaAccount (same logic as team/config) - user may have connected via Meta OAuth without TeamMember
+    const metaAccount = await prisma.metaAccount.findUnique({
+      where: { userId: hostId },
+      select: { accessToken: true, accessTokenExpires: true },
+    });
+    const hasValidMetaAccount = !!(
+      metaAccount?.accessToken &&
+      metaAccount.accessTokenExpires &&
+      new Date(metaAccount.accessTokenExpires) > new Date()
+    );
+
+    return NextResponse.json({ hasMembers: hasValidMetaAccount });
   } catch (error) {
     console.error('Error in /api/team/has-members:', error);
     return NextResponse.json({ hasMembers: false }, { status: 500 });

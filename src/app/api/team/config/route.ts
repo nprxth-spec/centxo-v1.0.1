@@ -4,20 +4,23 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { fromBasicUnits } from '@/lib/currency-utils';
 import { decryptToken } from '@/lib/services/metaClient';
+import { getCached, setCache, generateCacheKey, CacheTTL } from '@/lib/cache/redis';
 
 /**
  * Combined API: ad accounts + pages + businesses in one request.
  * Uses same team resolution and tokens - ensures consistency.
  * REDUCES Meta API calls: 3 per member (businesses, adaccounts, accounts) vs 6+ when called separately.
+ * Cache: Redis (2h) when available, in-memory fallback - supports 200+ users.
  */
-const CACHE_TTL = 60 * 60 * 1000; // 60 minutes - reduce rate limit usage
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+const CACHE_TTL_SEC = CacheTTL.TEAM_CONFIG; // 7200 sec
 
 declare global {
   var _teamConfigCache: Record<string, { data: any; timestamp: number }> | undefined;
 }
 
-const cache = globalThis._teamConfigCache ?? {};
-if (process.env.NODE_ENV !== 'production') globalThis._teamConfigCache = cache;
+const memoryCache = globalThis._teamConfigCache ?? {};
+if (process.env.NODE_ENV !== 'production') globalThis._teamConfigCache = memoryCache;
 
 /** Fetch all pages from a paginated Meta API response. Appends token to next URL if needed. */
 async function fetchAllPaginated(
@@ -55,11 +58,20 @@ export async function GET(req: NextRequest) {
     }
 
     const forceRefresh = req.nextUrl.searchParams.get('refresh') === 'true';
-    const cacheKey = `config_v10_${user.id}`; // v10: + MetaAccount fallback when no TeamMembers
+    const cacheKeyBase = `config_v11_${user.id}`; // v11: + Redis, 2h TTL for 200+ users
 
-    if (!forceRefresh && cache[cacheKey]) {
-      const cached = cache[cacheKey];
-      if (Date.now() - cached.timestamp < CACHE_TTL) {
+    // Try Redis first (shared across instances, supports 200+ users)
+    if (!forceRefresh) {
+      const redisCached = await getCached<any>(generateCacheKey('team:config', user.id));
+      if (redisCached) {
+        return NextResponse.json(redisCached);
+      }
+    }
+
+    // Fallback: in-memory cache (per-instance)
+    if (!forceRefresh && memoryCache[cacheKeyBase]) {
+      const cached = memoryCache[cacheKeyBase];
+      if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
         return NextResponse.json(cached.data);
       }
     }
@@ -74,12 +86,14 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    let metaAccountUserId = user.id;
     if (teamMembers.length === 0) {
       const memberRecord = await prisma.teamMember.findFirst({
         where: { memberEmail: session.user.email },
         select: { userId: true },
       });
       if (memberRecord) {
+        metaAccountUserId = memberRecord.userId; // Team member: check owner's MetaAccount
         teamMembers = await prisma.teamMember.findMany({
           where: {
             userId: memberRecord.userId,
@@ -91,10 +105,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Fallback: use MetaAccount when no TeamMembers (user connected via Meta OAuth or NextAuth Facebook)
+    // Fallback: use MetaAccount when no TeamMembers (user or owner connected via Meta OAuth)
     if (teamMembers.length === 0) {
       const metaAccount = await prisma.metaAccount.findUnique({
-        where: { userId: user.id },
+        where: { userId: metaAccountUserId },
       });
       if (metaAccount?.accessToken && metaAccount.accessTokenExpires && new Date(metaAccount.accessTokenExpires) > new Date()) {
         let token: string;
@@ -117,7 +131,8 @@ export async function GET(req: NextRequest) {
 
     if (teamMembers.length === 0) {
       const empty = { accounts: [], pages: [], businessPages: [], businessAccounts: [], businesses: [] };
-      cache[cacheKey] = { data: empty, timestamp: Date.now() };
+      memoryCache[cacheKeyBase] = { data: empty, timestamp: Date.now() };
+      await setCache(generateCacheKey('team:config', user.id), empty, CACHE_TTL_SEC);
       return NextResponse.json(empty);
     }
 
@@ -328,7 +343,8 @@ export async function GET(req: NextRequest) {
       businesses,
     };
 
-    cache[cacheKey] = { data: responseData, timestamp: Date.now() };
+    memoryCache[cacheKeyBase] = { data: responseData, timestamp: Date.now() };
+    await setCache(generateCacheKey('team:config', user.id), responseData, CACHE_TTL_SEC);
     return NextResponse.json(responseData);
   } catch (error) {
     console.error('Error in /api/team/config:', error);

@@ -1,6 +1,43 @@
 import { generateCacheKey, setCache, getCached, deleteCache } from '@/lib/cache/redis';
 import crypto from 'crypto';
 
+/** ~60 days in seconds - Facebook long-lived token duration */
+const LONG_LIVED_EXPIRES = 5184000;
+
+/**
+ * Exchange short-lived Facebook token for long-lived token (~60 days).
+ * Required because OAuth code flow returns short-lived tokens (~1-2 hours).
+ * @see https://developers.facebook.com/docs/facebook-login/guides/access-tokens/get-long-lived
+ */
+export async function exchangeForLongLivedToken(shortLivedToken: string): Promise<{
+    accessToken: string;
+    expiresIn: number;
+}> {
+    const appId = process.env.FACEBOOK_APP_ID;
+    const appSecret = process.env.FACEBOOK_APP_SECRET;
+    if (!appId || !appSecret) {
+        throw new Error('FACEBOOK_APP_ID and FACEBOOK_APP_SECRET are required for token exchange');
+    }
+
+    const url = `https://graph.facebook.com/v22.0/oauth/access_token?` + new URLSearchParams({
+        grant_type: 'fb_exchange_token',
+        client_id: appId,
+        client_secret: appSecret,
+        fb_exchange_token: shortLivedToken,
+    });
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!res.ok || !data.access_token) {
+        const errMsg = data.error?.message || `Token exchange failed: ${res.status}`;
+        throw new Error(errMsg);
+    }
+
+    const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : LONG_LIVED_EXPIRES;
+    return { accessToken: data.access_token, expiresIn };
+}
+
 // Interface for Token
 export interface TokenInfo {
     token: string;

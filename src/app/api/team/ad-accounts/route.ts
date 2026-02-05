@@ -4,16 +4,17 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { fromBasicUnits } from '@/lib/currency-utils';
 import { decryptToken } from '@/lib/services/metaClient';
+import { getCached, setCache, generateCacheKey, CacheTTL } from '@/lib/cache/redis';
 
-// Simple in-memory cache using globalThis to survive HMR in dev
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes - reduce Meta rate limit usage
+// 1 hour - reduce Meta API quota for 200+ users (Redis + in-memory fallback)
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 declare global {
-    var _adAccountCache: Record<string, { data: any, timestamp: number }> | undefined;
+    var _adAccountCache: Record<string, { data: any; timestamp: number }> | undefined;
 }
 
-const cache = globalThis._adAccountCache ?? {};
-if (process.env.NODE_ENV !== 'production') globalThis._adAccountCache = cache;
+const memoryCache = globalThis._adAccountCache ?? {};
+if (process.env.NODE_ENV !== 'production') globalThis._adAccountCache = memoryCache;
 
 export async function GET(req: NextRequest) {
     try {
@@ -41,15 +42,21 @@ export async function GET(req: NextRequest) {
             );
         }
 
-        // Check Cache
+        // Check Cache (Redis first, then in-memory)
         const searchParams = req.nextUrl.searchParams;
         const forceRefresh = searchParams.get('refresh') === 'true';
-        const cacheKey = `ad_accounts_v4_${user.id}`; // v4: bump to clear stale cache with raw spend values
+        const cacheKeyBase = `ad_accounts_v6_${user.id}`; // v6: + Redis cache
 
-        if (!forceRefresh && cache[cacheKey]) {
-            const cached = cache[cacheKey];
-            if (Date.now() - cached.timestamp < CACHE_TTL) {
-                console.log(`[team/ad-accounts] Serving from cache for user ${user.id}`);
+        if (!forceRefresh) {
+            const redisCached = await getCached<any>(generateCacheKey('team:ad-accounts', user.id));
+            if (redisCached) {
+                return NextResponse.json(redisCached);
+            }
+        }
+
+        if (!forceRefresh && memoryCache[cacheKeyBase]) {
+            const cached = memoryCache[cacheKeyBase];
+            if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
                 return NextResponse.json(cached.data);
             }
         }
@@ -66,6 +73,8 @@ export async function GET(req: NextRequest) {
                 accessToken: { not: null },
             },
         });
+
+        let metaAccountUserId = user.id;
 
         console.log(`[team/ad-accounts-debug] Host check: Found ${teamMembers.length} members connected to user ${user.id}`);
 
@@ -86,6 +95,7 @@ export async function GET(req: NextRequest) {
             });
 
             if (memberRecord) {
+                metaAccountUserId = memberRecord.userId; // Team member: check owner's MetaAccount
                 console.log(`[team/ad-accounts-debug] Found member record! Host ID: ${memberRecord.userId}, Member Record ID: ${memberRecord.id}, Type: ${memberRecord.memberType}`);
 
                 // Get all team members under this host
@@ -106,7 +116,7 @@ export async function GET(req: NextRequest) {
         // Fallback: use MetaAccount when no TeamMembers (same as team/config)
         if (teamMembers.length === 0) {
             const metaAccount = await prisma.metaAccount.findUnique({
-                where: { userId: user.id },
+                where: { userId: metaAccountUserId },
             });
             if (metaAccount?.accessToken && metaAccount.accessTokenExpires && new Date(metaAccount.accessTokenExpires) > new Date()) {
                 let token: string;
@@ -219,11 +229,8 @@ export async function GET(req: NextRequest) {
                 const data = await response.json();
 
                 if (data.data && Array.isArray(data.data)) {
-                    // Add source info to each account and convert from basic units
+                    // Add source info to each account
                     const accountsWithSource = data.data.map((account: any) => {
-                        const currency = account.currency || 'USD';
-                        const spendCapInMainUnits = fromBasicUnits(account.spend_cap, currency);
-                        const amountSpentInMainUnits = fromBasicUnits(account.amount_spent, currency);
 
                         // Determine business name or owner name
                         let businessName = account.business?.name || account.owner?.name;
@@ -275,9 +282,7 @@ export async function GET(req: NextRequest) {
                             // Flatten business name for frontend
                             business_name: businessName,
                             business_profile_picture_uri: businessProfilePictureUri,
-                            // Convert from basic units (cents/satang/yen) to main units (dollars/baht/yen)
-                            spend_cap: spendCapInMainUnits,
-                            amount_spent: amountSpentInMainUnits,
+
                             _source: {
                                 teamMemberId: member.id,
                                 facebookName: member.facebookName,
@@ -298,11 +303,8 @@ export async function GET(req: NextRequest) {
             teamMembersCount: teamMembers.length,
         };
 
-        // Save to cache (use same key as read)
-        cache[cacheKey] = {
-            data: responseData,
-            timestamp: Date.now()
-        };
+        memoryCache[cacheKeyBase] = { data: responseData, timestamp: Date.now() };
+        await setCache(generateCacheKey('team:ad-accounts', user.id), responseData, CacheTTL.AD_ACCOUNTS);
 
         return NextResponse.json(responseData);
 

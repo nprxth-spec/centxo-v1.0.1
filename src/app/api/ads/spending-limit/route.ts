@@ -8,7 +8,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { z } from 'zod';
 import { decryptToken } from '@/lib/services/metaClient';
-import { fromBasicUnits } from '@/lib/currency-utils';
+import { fromBasicUnits, toBasicUnits } from '@/lib/currency-utils';
 import { prisma } from '@/lib/prisma';
 
 // Input validation schema
@@ -98,11 +98,11 @@ export async function POST(request: NextRequest) {
                 if (!newLimit || parseFloat(newLimit) <= 0) {
                     return NextResponse.json({ error: 'Invalid spending limit' }, { status: 400 });
                 }
-                // Meta UPDATE spend_cap expects standard denomination (e.g. 23.50 for $23.50), NOT basic units.
-                // See: https://developers.facebook.com/docs/marketing-api/reference/ad-account/
-                const limitValue = parseFloat(newLimit);
+                
+                // Meta UPDATE spend_cap expects basic units (e.g. 100 cents for $1.00)
+                const limitValue = toBasicUnits(newLimit, currency);
                 updateParams.spend_cap = limitValue.toString();
-                console.log('[spending-limit] Sending spend_cap:', limitValue, currency, '(main units)');
+                console.log('[spending-limit] Sending spend_cap:', limitValue, currency, '(basic units, input was ' + newLimit + ')');
                 break;
 
             case 'reset':

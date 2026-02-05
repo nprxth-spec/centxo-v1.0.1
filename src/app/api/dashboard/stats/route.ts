@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { rateLimit, RateLimitPresets } from '@/lib/middleware/rateLimit';
 import { TokenInfo, getValidTokenForAdAccount } from '@/lib/facebook/token-helper';
 import { getCached, setCache, generateCacheKey, CacheTTL } from '@/lib/cache/redis';
+import { getApiAccountCap, getDynamicChunkSize, getDynamicChunkDelayMs } from '@/lib/plan-limits';
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,16 +33,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Ad account ID required' }, { status: 400 });
     }
 
-    const adAccountIds = adAccountIdsParam.split(',').filter(Boolean);
+    let adAccountIds = adAccountIdsParam.split(',').filter(Boolean);
 
-    // Redis cache for insights (reduces Meta API calls)
-    const cacheKey = generateCacheKey('dashboard:stats', session.user.id, adAccountIdsParam, startDate || '', endDate || '');
-    const cached = await getCached<Record<string, unknown>>(cacheKey);
-    if (cached) {
-      return NextResponse.json(cached);
-    }
-
-    // Fetch user with team members and MetaAccount to get all tokens
+    // Fetch user with plan and tokens
     const { prisma } = await import('@/lib/prisma');
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
@@ -55,6 +49,20 @@ export async function GET(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // Cap accounts by plan
+    const plan = (user as any).plan || 'FREE';
+    const cap = getApiAccountCap(plan);
+    if (adAccountIds.length > cap) {
+      adAccountIds = adAccountIds.slice(0, cap);
+    }
+
+    // Redis cache for insights (reduces Meta API calls)
+    const cacheKey = generateCacheKey('dashboard:stats', session.user.id, adAccountIds.sort().join(','), startDate || '', endDate || '');
+    const cached = await getCached<Record<string, unknown>>(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
     }
 
     // Collect all tokens
@@ -150,121 +158,99 @@ export async function GET(request: NextRequest) {
     // Requesting expanded fields: impressions, clicks, inline_link_clicks
     const timeRangeParams = `&time_range={'since':'${apiStartDate}','until':'${apiEndDate}'}`;
 
-    // Fetch all accounts in parallel (cache reduces repeated Meta API calls)
-    await Promise.all(adAccountIds.map(async (adAccountId) => {
-        try {
-          // Use helper to find correct token (uses Redis cache)
-          const token = await getValidTokenForAdAccount(adAccountId, tokens);
+    // Chunked fetch to avoid burst rate limits (dynamic chunk size + delay)
+    const CHUNK_SIZE = getDynamicChunkSize(adAccountIds.length);
+    const CHUNK_DELAY_MS = getDynamicChunkDelayMs(adAccountIds.length);
 
-          if (!token) {
-            console.error(`No valid token for account ${adAccountId} stats`);
-            return;
-          }
+    type DayRow = { date: string; spend: number; revenue: number; messages: number; impressions: number; clicks: number; linkClicks: number; purchases: number; viewContent: number; addToCart: number; isCurrent: boolean };
+    const processAccount = async (adAccountId: string): Promise<{ days: DayRow[]; activeCampaigns: number } | null> => {
+      try {
+        const token = await getValidTokenForAdAccount(adAccountId, tokens);
+        if (!token) return null;
+        const insightsUrl = `https://graph.facebook.com/v22.0/${adAccountId}/insights?fields=spend,impressions,clicks,inline_link_clicks,actions,action_values,date_start${timeRangeParams}&time_increment=1&access_token=${token}`;
+        const campaignsUrl = `https://graph.facebook.com/v22.0/${adAccountId}/campaigns?fields=status&access_token=${token}`;
+        const [insightsResponse, campaignsResponse] = await Promise.all([fetch(insightsUrl), fetch(campaignsUrl)]);
 
-          // Fetch insights + campaigns in parallel (reduces latency per account)
-          const insightsUrl = `https://graph.facebook.com/v22.0/${adAccountId}/insights?fields=spend,impressions,clicks,inline_link_clicks,actions,action_values,date_start${timeRangeParams}&time_increment=1&access_token=${token}`;
-          const campaignsUrl = `https://graph.facebook.com/v22.0/${adAccountId}/campaigns?fields=status&access_token=${token}`;
+        const days: DayRow[] = [];
+        let activeCampaigns = 0;
 
-          const [insightsResponse, campaignsResponse] = await Promise.all([
-            fetch(insightsUrl),
-            fetch(campaignsUrl),
-          ]);
-
-          if (insightsResponse.ok) {
-            const data = await insightsResponse.json();
-            const days = data.data || [];
-
-            days.forEach((day: any) => {
-              const date = day.date_start; // YYYY-MM-DD
-              const spend = parseFloat(day.spend || '0');
-              const impressions = parseInt(day.impressions || '0');
-              const clicks = parseInt(day.clicks || '0');
-              const linkClicks = parseInt(day.inline_link_clicks || '0');
-
-              // Parse Actions
-              let messages = 0;
-              let viewContent = 0;
-              let addToCart = 0;
-              let purchases = 0;
-
-              if (day.actions) {
-                day.actions.forEach((a: any) => {
-                  if (a.action_type === 'onsite_conversion.messaging_conversation_started_7d') {
-                    messages += parseInt(a.value);
-                  }
-                  if (a.action_type === 'offsite_conversion.fb_pixel_view_content') {
-                    viewContent += parseInt(a.value);
-                  }
-                  if (a.action_type === 'offsite_conversion.fb_pixel_add_to_cart') {
-                    addToCart += parseInt(a.value);
-                  }
-                  if (a.action_type === 'offsite_conversion.fb_pixel_purchase' || a.action_type === 'purchase') {
-                    purchases += parseInt(a.value);
-                  }
-                });
-              }
-
-              // Parse Revenue
-              let revenue = 0;
-              if (day.action_values) {
-                const purchaseValueAction = day.action_values.find((a: any) =>
-                  a.action_type === 'purchase' || a.action_type === 'omni_purchase'
-                );
-                if (purchaseValueAction) {
-                  revenue = parseFloat(purchaseValueAction.value);
-                }
-              }
-
-              // Check if date belongs to Current or Previous period
-              if (date >= currentStartStr) {
-                // Current Period
-                totalSpend += spend;
-                totalImpressions += impressions;
-                totalClicks += clicks;
-                totalLinkClicks += linkClicks;
-                totalMessages += messages;
-                totalViewContent += viewContent;
-                totalAddToCart += addToCart;
-                totalPurchases += purchases;
-                totalRevenue += revenue;
-
-                // Add to Daily Map (only for Current Period Chart)
-                const existing = dailyMap.get(date) || {
-                  spend: 0, revenue: 0, messages: 0,
-                  impressions: 0, clicks: 0, linkClicks: 0, purchases: 0
-                };
-                dailyMap.set(date, {
-                  spend: existing.spend + spend,
-                  revenue: existing.revenue + revenue,
-                  messages: existing.messages + messages,
-                  impressions: existing.impressions + impressions,
-                  clicks: existing.clicks + clicks,
-                  linkClicks: existing.linkClicks + linkClicks,
-                  purchases: existing.purchases + purchases
-                });
-              } else {
-                // Previous Period
-                prevTotalSpend += spend;
-                prevTotalImpressions += impressions;
-                prevTotalClicks += clicks;
-                prevTotalLinkClicks += linkClicks;
-                prevTotalMessages += messages;
-                prevTotalPurchases += purchases;
-                prevTotalRevenue += revenue;
-              }
-            });
-          }
-
-          if (campaignsResponse.ok) {
-            const campaignsData = await campaignsResponse.json();
-            const activeCount = campaignsData.data?.filter((c: any) => c.status === 'ACTIVE').length || 0;
-            totalActiveCampaigns += activeCount;
-          }
-
-        } catch (err) {
-          console.error(`Error fetching stats for account ${adAccountId}:`, err);
+        if (insightsResponse.ok) {
+          const data = await insightsResponse.json();
+          (data.data || []).forEach((day: any) => {
+            const date = day.date_start;
+            const spend = parseFloat(day.spend || '0');
+            const impressions = parseInt(day.impressions || '0');
+            const clicks = parseInt(day.clicks || '0');
+            const linkClicks = parseInt(day.inline_link_clicks || '0');
+            let messages = 0, viewContent = 0, addToCart = 0, purchases = 0, revenue = 0;
+            if (day.actions) {
+              day.actions.forEach((a: any) => {
+                if (a.action_type === 'onsite_conversion.messaging_conversation_started_7d') messages += parseInt(a.value);
+                if (a.action_type === 'offsite_conversion.fb_pixel_view_content') viewContent += parseInt(a.value);
+                if (a.action_type === 'offsite_conversion.fb_pixel_add_to_cart') addToCart += parseInt(a.value);
+                if (a.action_type === 'offsite_conversion.fb_pixel_purchase' || a.action_type === 'purchase') purchases += parseInt(a.value);
+              });
+            }
+            if (day.action_values) {
+              const p = day.action_values.find((a: any) => a.action_type === 'purchase' || a.action_type === 'omni_purchase');
+              if (p) revenue = parseFloat(p.value);
+            }
+            days.push({ date, spend, revenue, messages, impressions, clicks, linkClicks, purchases, viewContent, addToCart, isCurrent: date >= currentStartStr });
+          });
         }
-    }));
+        if (campaignsResponse.ok) {
+          const campaignsData = await campaignsResponse.json();
+          activeCampaigns = campaignsData.data?.filter((c: any) => c.status === 'ACTIVE').length || 0;
+        }
+        return { days, activeCampaigns };
+      } catch (err) {
+        console.error(`Error fetching stats for account:`, err);
+        return null;
+      }
+    };
+
+    for (let i = 0; i < adAccountIds.length; i += CHUNK_SIZE) {
+      const chunk = adAccountIds.slice(i, i + CHUNK_SIZE);
+      const results = await Promise.all(chunk.map(processAccount));
+      for (const r of results) {
+        if (!r) continue;
+        totalActiveCampaigns += r.activeCampaigns;
+        for (const d of r.days) {
+          if (d.isCurrent) {
+            totalSpend += d.spend;
+            totalImpressions += d.impressions;
+            totalClicks += d.clicks;
+            totalLinkClicks += d.linkClicks;
+            totalMessages += d.messages;
+            totalViewContent += d.viewContent;
+            totalAddToCart += d.addToCart;
+            totalPurchases += d.purchases;
+            totalRevenue += d.revenue;
+            const existing = dailyMap.get(d.date) || { spend: 0, revenue: 0, messages: 0, impressions: 0, clicks: 0, linkClicks: 0, purchases: 0 };
+            dailyMap.set(d.date, {
+              spend: existing.spend + d.spend,
+              revenue: existing.revenue + d.revenue,
+              messages: existing.messages + d.messages,
+              impressions: existing.impressions + d.impressions,
+              clicks: existing.clicks + d.clicks,
+              linkClicks: existing.linkClicks + d.linkClicks,
+              purchases: existing.purchases + d.purchases
+            });
+          } else {
+            prevTotalSpend += d.spend;
+            prevTotalImpressions += d.impressions;
+            prevTotalClicks += d.clicks;
+            prevTotalLinkClicks += d.linkClicks;
+            prevTotalMessages += d.messages;
+            prevTotalPurchases += d.purchases;
+            prevTotalRevenue += d.revenue;
+          }
+        }
+      }
+      if (i + CHUNK_SIZE < adAccountIds.length) {
+        await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS));
+      }
+    }
 
     // --- Computed Metrics (Current) ---
     const totalRoas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
@@ -359,7 +345,7 @@ export async function GET(request: NextRequest) {
       extendedStats,
     };
 
-    await setCache(cacheKey, payload, CacheTTL.CAMPAIGNS_INSIGHTS);
+    await setCache(cacheKey, payload, CacheTTL.DASHBOARD_STATS);
     return NextResponse.json(payload);
 
   } catch (error) {

@@ -36,17 +36,23 @@ if (typeof window === 'undefined') { // Only in server-side
   }
 }
 
+import { MetaQuotaCacheTTL } from '@/lib/meta-quota-config';
+
 /**
  * Cache TTL configurations (in seconds)
+ * Uses meta-quota-config for 500+ user scale
  */
 export const CacheTTL = {
-  CAMPAIGNS_INSIGHTS: 300,      // 5 minutes - auto-refresh after 5 min
-  CAMPAIGNS_LIST: 300,          // 5 minutes - list can change
-  ADSETS_LIST: 300,             // 5 minutes
-  ADS_LIST: 300,                // 5 minutes
-  PAGE_NAMES: 3600,             // 1 hour - page names rarely change
-  AD_ACCOUNTS: 1800,            // 30 minutes
-  USER_PREFERENCES: 86400,      // 24 hours
+  CAMPAIGNS_INSIGHTS: MetaQuotaCacheTTL.LISTS,
+  CAMPAIGNS_LIST: MetaQuotaCacheTTL.LISTS,
+  ADSETS_LIST: MetaQuotaCacheTTL.LISTS,
+  ADS_LIST: MetaQuotaCacheTTL.LISTS,
+  PAGE_NAMES: MetaQuotaCacheTTL.PROFILE,
+  AD_ACCOUNTS: MetaQuotaCacheTTL.TEAM,
+  TEAM_CONFIG: MetaQuotaCacheTTL.TEAM,
+  DASHBOARD_STATS: MetaQuotaCacheTTL.DASHBOARD,
+  TEAM_FACEBOOK_PICTURES: MetaQuotaCacheTTL.PROFILE,
+  USER_PREFERENCES: 86400,      // 24 hours - not Meta API
 } as const;
 
 /**

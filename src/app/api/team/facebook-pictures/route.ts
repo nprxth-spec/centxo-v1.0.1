@@ -3,14 +3,15 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { decryptToken } from '@/lib/services/metaClient';
+import { getCached, setCache, generateCacheKey, CacheTTL } from '@/lib/cache/redis';
 
-// Cache to reduce Meta API calls (gr:get:User per member - heavily used)
-const CACHE_TTL = 60 * 60 * 1000; // 60 min
+// Cache: Redis + in-memory fallback - reduce gr:get:User per member
+const CACHE_TTL_MS = 60 * 60 * 1000; // 60 min
 declare global {
   var _facebookPicturesCache: Record<string, { data: any; timestamp: number }> | undefined;
 }
-const cache = globalThis._facebookPicturesCache ?? {};
-if (process.env.NODE_ENV !== 'production') globalThis._facebookPicturesCache = cache;
+const memoryCache = globalThis._facebookPicturesCache ?? {};
+if (process.env.NODE_ENV !== 'production') globalThis._facebookPicturesCache = memoryCache;
 
 export async function GET(req: NextRequest) {
     try {
@@ -49,11 +50,19 @@ export async function GET(req: NextRequest) {
             targetUserId = membershipTeam.userId;
         }
 
-        const cacheKey = `pictures_${targetUserId}`;
+        const cacheKeyBase = `pictures_${targetUserId}`;
         const forceRefresh = req.nextUrl.searchParams.get('refresh') === 'true';
-        const cached = !forceRefresh && cache[cacheKey];
-        if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-            return NextResponse.json(cached.data);
+
+        // Try Redis first (shared across instances for 200+ users)
+        if (!forceRefresh) {
+            const redisCached = await getCached<any>(generateCacheKey('team:facebook-pictures', targetUserId));
+            if (redisCached) {
+                return NextResponse.json(redisCached);
+            }
+        }
+
+        if (!forceRefresh && memoryCache[cacheKeyBase] && Date.now() - memoryCache[cacheKeyBase].timestamp < CACHE_TTL_MS) {
+            return NextResponse.json(memoryCache[cacheKeyBase].data);
         }
 
         // Get all Facebook team members
@@ -117,7 +126,8 @@ export async function GET(req: NextRequest) {
         );
 
         const result = { members: membersWithPictures };
-        cache[cacheKey] = { data: result, timestamp: Date.now() };
+        memoryCache[cacheKeyBase] = { data: result, timestamp: Date.now() };
+        await setCache(generateCacheKey('team:facebook-pictures', targetUserId), result, CacheTTL.TEAM_FACEBOOK_PICTURES);
         return NextResponse.json(result);
     } catch (error) {
         console.error('Error fetching team member pictures:', error);

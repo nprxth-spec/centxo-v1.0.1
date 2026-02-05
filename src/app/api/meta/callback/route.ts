@@ -6,7 +6,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { encryptToken } from '@/lib/services/metaClient';
+import { exchangeForLongLivedToken } from '@/lib/facebook/token-helper';
 import { createAuditLog, getRequestMetadata } from '@/lib/audit';
+import { deleteCache, generateCacheKey } from '@/lib/cache/redis';
+import { invalidateTeamCachesForUser } from '@/lib/cache/invalidate-team';
 
 const prisma = new PrismaClient();
 
@@ -38,8 +41,8 @@ export async function GET(request: NextRequest) {
       throw new Error('Failed to get access token');
     }
 
-    const accessToken = tokenData.access_token;
-    const expiresIn = tokenData.expires_in || 5184000; // 60 days default
+    // Exchange short-lived token for long-lived (~60 days)
+    const { accessToken, expiresIn } = await exchangeForLongLivedToken(tokenData.access_token);
 
     // Get user info
     const userInfoUrl = `https://graph.facebook.com/v22.0/me?access_token=${accessToken}&fields=id,name`;
@@ -81,6 +84,14 @@ export async function GET(request: NextRequest) {
         accessTokenExpires: expiresAt,
       },
     });
+
+    // Invalidate team caches so next fetch gets fresh data (Redis + in-memory)
+    invalidateTeamCachesForUser(user.id);
+    await Promise.all([
+      deleteCache(generateCacheKey('team:config', user.id)),
+      deleteCache(generateCacheKey('team:ad-accounts', user.id)),
+      deleteCache(generateCacheKey('team:facebook-pictures', user.id)),
+    ]);
 
     const { ipAddress, userAgent } = getRequestMetadata(request);
     await createAuditLog({

@@ -20,16 +20,17 @@
   - me/adaccounts
   - me/accounts
 
-### 2. เพิ่ม Cache TTL
+### 2. เพิ่ม Cache TTL (รองรับ 200+ users)
 | API | ก่อน | หลัง |
 |-----|------|------|
-| team/config | 10 min | **30 min** |
-| team/ad-accounts | 10 min | **30 min** |
-| team/pages | 10 min | **30 min** |
-| team/businesses | 10 min | **30 min** |
-| facebook-profile | ไม่มี | **30 min** |
-| facebook-pictures | ไม่มี | **30 min** |
-| Client (localStorage) | 5 min | **15 min** |
+| team/config | 30 min | **2 ชม. (Redis + in-memory)** |
+| team/ad-accounts | 30 min | **1 ชม.** |
+| team/pages | - | รวมใน config |
+| team/businesses | - | รวมใน config |
+| facebook-profile | 30 min | 30 min |
+| facebook-pictures | 30 min | 30 min |
+| Client (ConfigProvider) | 60 min | **2 ชม.** |
+| Manual Refresh cooldown | 10 min | **15 min** |
 
 ### 3. Cache สำหรับ User/Profile APIs
 - **facebook-profile**: เพิ่ม cache 30 นาที (gr:get:User)
@@ -53,6 +54,13 @@
 - **Parallel per account**: getItems + getInsights รันพร้อมกัน (Promise.all) – ลดเวลารอ ~50% ต่อบัญชี
 - **Batch accounts**: ประมวลผล 2 บัญชีพร้อมกัน + delay 150ms ระหว่าง batch – เร็วขึ้น ~2x สำหรับหลายบัญชี
 - ผล: Export เร็วขึ้น ~2–3x โดยยังคงปลอดภัยจาก Meta rate limit
+
+### 7. การปรับปรุงเพื่อรองรับ 200+ users (ล่าสุด)
+- **ลดการ Refresh บ่อย**: หน้า Accounts ไม่ bypass cooldown อีกต่อไป ใช้ cache เมื่อ valid
+- **AccountsTab**: โหลดครั้งแรกใช้ cache (ไม่ force refresh)
+- **Redis สำหรับ team/config**: ถ้ามี Redis จะ cache config 2 ชม. แชร์ข้าม instances
+- **Cache invalidation**: เมื่อ connect/disconnect Facebook จะล้าง cache เพื่อให้ fetch ครั้งถัดไปได้ข้อมูลใหม่
+- **ผล**: ลด Meta API calls ลงอย่างมากเมื่อผู้ใช้หลายคนใช้งานพร้อมกัน
 
 ## คำแนะนำเพิ่มเติม
 1. **gr:get:InvalidID (57 calls)** - ควรตรวจสอบว่ามีการ request ID ที่ไม่ valid หรือไม่

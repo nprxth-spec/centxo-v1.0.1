@@ -32,10 +32,10 @@ export default function AdsManagerAccountsPage() {
     const [loading, setLoading] = useState(false);
     const [hasTeamMembers, setHasTeamMembers] = useState<boolean | null>(null);
 
-    // Refresh context data when this page loads to ensure latest accounts are available
+    // Refresh context data when this page loads - use cache when valid (respect cooldown for Meta quota)
     useEffect(() => {
         if (session?.user) {
-            refreshData(true);
+            refreshData(false);
         }
     }, [session, refreshData]);
 
@@ -74,7 +74,7 @@ export default function AdsManagerAccountsPage() {
 
     if (hasTeamMembers === null) {
         return (
-            <div className="h-full p-4 md:p-6 lg:p-8 flex items-center justify-center">
+            <div className="h-full px-10 py-4 md:px-16 md:py-6 lg:px-24 lg:py-8 flex items-center justify-center">
                 <div className="text-muted-foreground">Loading...</div>
             </div>
         );
@@ -82,14 +82,14 @@ export default function AdsManagerAccountsPage() {
 
     if (!hasTeamMembers) {
         return (
-            <div className="h-full p-4 md:p-6 lg:p-8">
+            <div className="h-full px-10 py-4 md:px-16 md:py-6 lg:px-24 lg:py-8">
                 <NoFacebookAccountsPrompt />
             </div>
         );
     }
 
     return (
-        <div className="h-full p-4 md:p-6 lg:p-8 flex flex-col overflow-hidden">
+        <div className="h-full px-10 py-4 md:px-16 md:py-6 lg:px-24 lg:py-8 flex flex-col overflow-hidden">
             <div className="w-full flex flex-col h-full">
                 {/* Tabs - at top */}
                 <div className="flex-shrink-0 mb-4">
@@ -127,11 +127,19 @@ export default function AdsManagerAccountsPage() {
                     </nav>
                 </div>
 
-                {/* Header */}
+                {/* Header - varies by tab */}
                 <div className="mb-4 flex items-center justify-between flex-shrink-0">
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('adsManager.accounts', 'Ad Accounts')}</h1>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">{t('adsManager.accountsSubtitle', 'Manage your connected ad accounts')}</p>
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                            {activeTab === 'accounts' && t('adsManager.accounts', 'Accounts')}
+                            {activeTab === 'accounts-by-business' && t('adsManager.accountsByBusinessTitle', 'Accounts by Business')}
+                            {activeTab === 'pages-by-business' && t('adsManager.pagesByBusinessTitle', 'Pages by Business')}
+                        </h1>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                            {activeTab === 'accounts' && t('adsManager.accountsSubtitle', 'Manage your connected ad accounts')}
+                            {activeTab === 'accounts-by-business' && t('adsManager.accountsByBusinessSubtitle', 'Ad accounts in your Business Portfolios')}
+                            {activeTab === 'pages-by-business' && t('adsManager.pagesByBusinessSubtitle', 'Pages across your Business Portfolios')}
+                        </p>
                     </div>
                 </div>
 

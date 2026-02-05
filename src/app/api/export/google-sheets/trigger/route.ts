@@ -185,6 +185,13 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'No accounts selected' }, { status: 400 })
         }
 
+        // Cap account IDs to reduce Meta API quota (200+ users)
+        const MAX_ACCOUNTS_PER_EXPORT = 10
+        if (accountIds.length > MAX_ACCOUNTS_PER_EXPORT) {
+            console.warn(`[Export] Capping ${accountIds.length} accounts to ${MAX_ACCOUNTS_PER_EXPORT} for Meta quota`)
+            accountIds = accountIds.slice(0, MAX_ACCOUNTS_PER_EXPORT)
+        }
+
         let data: any[] = []
 
         // Insight-dependent fields - only fetch insights API when mapping needs them (saves ~50% Meta quota)
@@ -202,7 +209,8 @@ export async function POST(request: NextRequest) {
 
         const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
         const BATCH_SIZE = 2 // Run 2 accounts in parallel
-        const DELAY_MS = 150 // Reduced from 400ms - still safe for Meta rate limit
+        const { MetaQuotaDelays } = await import('@/lib/meta-quota-config');
+        const DELAY_MS = MetaQuotaDelays.EXPORT_BATCH_DELAY_MS; // Throttle for Meta rate limit (500+ users)
 
         if (config.dataType === 'accounts') {
             const allAccounts = await getAdAccounts(fbToken)
