@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
-import { Check, CreditCard, FileText, Zap, Loader2, Building2, Users } from 'lucide-react';
+import { Check, CreditCard, FileText, Zap, Loader2, Building2, Users, ExternalLink } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { PLAN_LIMITS } from '@/lib/plan-limits';
@@ -24,6 +24,9 @@ export function BillingSettings() {
     const [loading, setLoading] = useState(true);
     const [upgradeLoading, setUpgradeLoading] = useState<string | null>(null);
     const [portalLoading, setPortalLoading] = useState(false);
+    const [paymentMethods, setPaymentMethods] = useState<{ id: string; brand: string; last4: string; expMonth?: number; expYear?: number }[]>([]);
+    const [invoices, setInvoices] = useState<{ id: string; number: string; amountPaid: number; currency: string; status: string; created: string | null; invoicePdf: string | null; hostedInvoiceUrl: string | null }[]>([]);
+    const [billingDataLoading, setBillingDataLoading] = useState(false);
 
     const defaultTab = searchParams.get('tab') || 'subscription';
     const [activeTab, setActiveTab] = useState(defaultTab);
@@ -51,6 +54,20 @@ export function BillingSettings() {
             })
             .catch(() => setLoading(false));
     }, []);
+
+    useEffect(() => {
+        if (activeTab === 'payment' || activeTab === 'invoices') {
+            setBillingDataLoading(true);
+            fetch('/api/user/billing-data')
+                .then((res) => res.json())
+                .then((data) => {
+                    setPaymentMethods(data.paymentMethods || []);
+                    setInvoices(data.invoices || []);
+                })
+                .catch(() => {})
+                .finally(() => setBillingDataLoading(false));
+        }
+    }, [activeTab]);
 
     useEffect(() => {
         const success = searchParams.get('success');
@@ -230,29 +247,62 @@ export function BillingSettings() {
                         </TabsContent>
 
                         <TabsContent value="payment" className="space-y-6 mt-0">
-                             <div className="space-y-0.5">
+                            <div className="space-y-0.5">
                                 <h2 className="text-2xl font-bold tracking-tight">{t('settings.billing.payment', 'Payment Methods')}</h2>
                                 <p className="text-muted-foreground">
                                     {t('settings.billing.paymentDesc', 'Manage your payment cards and billing info.')}
                                 </p>
                             </div>
                             <div className="my-6 h-[1px] bg-border" />
-                            <div className="flex flex-col items-center justify-center py-12 text-center">
-                                <CreditCard className="h-12 w-12 text-muted-foreground/20 mb-4" />
-                                <h3 className="text-lg font-medium text-foreground">
-                                    {userPlan === 'PLUS' || userPlan === 'PRO'
-                                        ? t('settings.billing.managePayment', 'Manage payment methods')
-                                        : 'No payment methods yet'}
-                                </h3>
-                                <p className="text-muted-foreground mt-2 max-w-sm">
-                                    {userPlan === 'PLUS' || userPlan === 'PRO'
-                                        ? t('settings.billing.portalDesc', 'Update payment method, view invoices, or cancel subscription.')
-                                        : 'Add a payment method to upgrade your plan.'}
-                                </p>
-                                <Button variant="outline" className="mt-6" onClick={handleManageBilling} disabled={portalLoading}>
-                                    {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : (userPlan === 'PLUS' || userPlan === 'PRO' ? t('settings.billing.manage', 'Manage Billing') : 'Add Payment Method')}
-                                </Button>
-                            </div>
+                            {billingDataLoading ? (
+                                <div className="flex justify-center py-12">
+                                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                                </div>
+                            ) : paymentMethods.length > 0 ? (
+                                <div className="space-y-4">
+                                    <div className="grid gap-3">
+                                        {paymentMethods.map((pm) => (
+                                            <div
+                                                key={pm.id}
+                                                className="flex items-center justify-between rounded-lg border border-border bg-card p-4"
+                                            >
+                                                <div className="flex items-center gap-4">
+                                                    <CreditCard className="h-10 w-10 text-muted-foreground" />
+                                                    <div>
+                                                        <p className="font-medium capitalize">{pm.brand}</p>
+                                                        <p className="text-sm text-muted-foreground">
+                                                            •••• {pm.last4}
+                                                            {pm.expMonth != null && pm.expYear != null && (
+                                                                <> · Expires {String(pm.expMonth).padStart(2, '0')}/{pm.expYear}</>
+                                                            )}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <Button variant="outline" onClick={handleManageBilling} disabled={portalLoading}>
+                                        {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('settings.billing.manage', 'Manage Billing')}
+                                    </Button>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-12 text-center">
+                                    <CreditCard className="h-12 w-12 text-muted-foreground/20 mb-4" />
+                                    <h3 className="text-lg font-medium text-foreground">
+                                        {userPlan === 'PLUS' || userPlan === 'PRO'
+                                            ? t('settings.billing.managePayment', 'Manage payment methods')
+                                            : 'No payment methods yet'}
+                                    </h3>
+                                    <p className="text-muted-foreground mt-2 max-w-sm">
+                                        {userPlan === 'PLUS' || userPlan === 'PRO'
+                                            ? t('settings.billing.portalDesc', 'Update payment method, view invoices, or cancel subscription.')
+                                            : 'Add a payment method to upgrade your plan.'}
+                                    </p>
+                                    <Button variant="outline" className="mt-6" onClick={handleManageBilling} disabled={portalLoading}>
+                                        {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : (userPlan === 'PLUS' || userPlan === 'PRO' ? t('settings.billing.manage', 'Manage Billing') : 'Add Payment Method')}
+                                    </Button>
+                                </div>
+                            )}
                         </TabsContent>
 
                         <TabsContent value="invoices" className="space-y-6 mt-0">
@@ -263,22 +313,77 @@ export function BillingSettings() {
                                 </p>
                             </div>
                             <div className="my-6 h-[1px] bg-border" />
-                            <div className="flex flex-col items-center justify-center py-12 text-center">
-                                <FileText className="h-12 w-12 text-muted-foreground/20 mb-4" />
-                                <h3 className="text-lg font-medium text-foreground">
-                                    {userPlan === 'PLUS' || userPlan === 'PRO' ? t('settings.billing.viewInvoices', 'View and download invoices') : 'No invoices history'}
-                                </h3>
-                                <p className="text-muted-foreground mt-2 max-w-sm">
-                                    {userPlan === 'PLUS' || userPlan === 'PRO'
-                                        ? t('settings.billing.portalDesc', 'Open Stripe to view and download your invoices.')
-                                        : 'Your invoice history will appear here once you make your first payment.'}
-                                </p>
-                                {(userPlan === 'PLUS' || userPlan === 'PRO') && (
-                                    <Button variant="outline" className="mt-6" onClick={handleManageBilling} disabled={portalLoading}>
+                            {billingDataLoading ? (
+                                <div className="flex justify-center py-12">
+                                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                                </div>
+                            ) : invoices.length > 0 ? (
+                                <div className="space-y-4">
+                                    <div className="rounded-lg border border-border overflow-hidden">
+                                        <table className="w-full text-sm">
+                                            <thead className="bg-muted/50">
+                                                <tr>
+                                                    <th className="text-left p-3 font-medium">Invoice</th>
+                                                    <th className="text-left p-3 font-medium">Date</th>
+                                                    <th className="text-left p-3 font-medium">Amount</th>
+                                                    <th className="text-left p-3 font-medium">Status</th>
+                                                    <th className="text-right p-3 font-medium"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {invoices.map((inv) => (
+                                                    <tr key={inv.id} className="border-t border-border">
+                                                        <td className="p-3 font-medium">{inv.number}</td>
+                                                        <td className="p-3 text-muted-foreground">
+                                                            {inv.created ? new Date(inv.created).toLocaleDateString() : '—'}
+                                                        </td>
+                                                        <td className="p-3">
+                                                            {inv.amountPaid > 0 ? `${inv.currency} ${(inv.amountPaid).toFixed(2)}` : '—'}
+                                                        </td>
+                                                        <td className="p-3">
+                                                            <span className={`capitalize ${inv.status === 'paid' ? 'text-green-600' : inv.status === 'open' ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                                                                {inv.status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-3 text-right">
+                                                            {inv.invoicePdf && (
+                                                                <a
+                                                                    href={inv.invoicePdf}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                                                                >
+                                                                    PDF <ExternalLink className="h-3 w-3" />
+                                                                </a>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <Button variant="outline" onClick={handleManageBilling} disabled={portalLoading}>
                                         {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('settings.billing.manage', 'Open Billing Portal')}
                                     </Button>
-                                )}
-                            </div>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-12 text-center">
+                                    <FileText className="h-12 w-12 text-muted-foreground/20 mb-4" />
+                                    <h3 className="text-lg font-medium text-foreground">
+                                        {userPlan === 'PLUS' || userPlan === 'PRO' ? t('settings.billing.viewInvoices', 'View and download invoices') : 'No invoices history'}
+                                    </h3>
+                                    <p className="text-muted-foreground mt-2 max-w-sm">
+                                        {userPlan === 'PLUS' || userPlan === 'PRO'
+                                            ? t('settings.billing.portalDesc', 'Open Stripe to view and download your invoices.')
+                                            : 'Your invoice history will appear here once you make your first payment.'}
+                                    </p>
+                                    {(userPlan === 'PLUS' || userPlan === 'PRO') && (
+                                        <Button variant="outline" className="mt-6" onClick={handleManageBilling} disabled={portalLoading}>
+                                            {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('settings.billing.manage', 'Open Billing Portal')}
+                                        </Button>
+                                    )}
+                                </div>
+                            )}
                         </TabsContent>
                     </div>
                 </div>
