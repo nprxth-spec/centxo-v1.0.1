@@ -67,6 +67,8 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'adbox.fromAd': 'From Ad',
     'adbox.adPost': 'Ad post',
     'adbox.selectConversation': 'Select a conversation',
+    'adbox.loadingMessages': 'Loading messages',
+    'adbox.startConversation': 'Start the conversation',
     'adbox.connectFacebook': 'Connect Facebook to use AdBox',
     'adbox.connectDescription': 'Connect your Facebook account in Settings to view and reply to messages from your Pages.',
 
@@ -1343,6 +1345,8 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'adbox.fromAd': 'จากโฆษณา',
     'adbox.adPost': 'โพสต์โฆษณา',
     'adbox.selectConversation': 'เลือกการสนทนา',
+    'adbox.loadingMessages': 'กำลังโหลดข้อความ',
+    'adbox.startConversation': 'เริ่มต้นการสนทนา',
     'adbox.connectFacebook': 'เชื่อมต่อ Facebook เพื่อใช้ AdBox',
     'adbox.connectDescription': 'เชื่อมต่อบัญชี Facebook ในตั้งค่าเพื่อดูและตอบข้อความจากเพจของคุณ',
 

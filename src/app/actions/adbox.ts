@@ -100,17 +100,25 @@ export async function fetchConversationsFromDB(pageIds: string[]) {
 
   try {
     const conversations = await adboxDb.findConversationsWithMessages(pageIds, 100);
-    const byKey = new Map<string, { c: typeof conversations[0]; lastMessageAt: Date }>();
+    const byKey = new Map<string, { c: typeof conversations[0]; lastMessageAt: Date; adId: string | null; facebookLink: string | null }>();
     for (const c of conversations) {
       const pid = c.participantId || (c.messages[0] as { senderId?: string } | undefined)?.senderId || '';
       const key = `${c.pageId}:${pid}`;
-      const existing = byKey.get(key);
       const lastAt = c.lastMessageAt instanceof Date ? c.lastMessageAt : new Date(c.lastMessageAt);
+      const existing = byKey.get(key);
       if (!existing || lastAt.getTime() > existing.lastMessageAt.getTime()) {
-        byKey.set(key, { c, lastMessageAt: lastAt });
+        byKey.set(key, {
+          c,
+          lastMessageAt: lastAt,
+          adId: c.adId || existing?.adId || null,
+          facebookLink: c.facebookLink || existing?.facebookLink || null,
+        });
+      } else {
+        if (c.adId) existing.adId = c.adId;
+        if (c.facebookLink) existing.facebookLink = c.facebookLink;
       }
     }
-    return Array.from(byKey.values()).map(({ c }) => {
+    return Array.from(byKey.values()).map(({ c, adId: mergedAdId, facebookLink: mergedLink }) => {
       let participantName = c.participantName || 'Facebook User';
       let participantId = c.participantId;
 
@@ -128,8 +136,8 @@ export async function fetchConversationsFromDB(pageIds: string[]) {
         updated_time: c.lastMessageAt.toISOString(),
         snippet: c.snippet,
         unread_count: c.unreadCount,
-        adId: c.adId || null,
-        facebookLink: c.facebookLink || null,
+        adId: mergedAdId || c.adId || null,
+        facebookLink: mergedLink || c.facebookLink || null,
         participants: { data: [{ name: participantName, id: participantId }] },
       };
     });

@@ -208,7 +208,7 @@ export default function AdBoxPage() {
 
   useEffect(() => {
     if (effectivePageIds.length > 0 && hasToken) {
-      loadConversations(effectivePageIds, true);
+      loadConversations(effectivePageIds, false);
     } else {
       setConversations([]);
     }
@@ -228,7 +228,7 @@ export default function AdBoxPage() {
       loadMessages(
         selectedConversation.id as string,
         selectedConversation.pageId as string,
-        true
+        false
       );
       markConversationAsRead(selectedConversation.id as string).then(() => {
         setConversations((prev) =>
@@ -379,12 +379,12 @@ export default function AdBoxPage() {
     if (!convId || !pageId || !hasToken) return;
     let isActive = true;
     let liveSyncCount = 0;
-    const POLL_INTERVAL = 2500;
+    const POLL_INTERVAL = 3000;
     const fastPoll = async () => {
       if (!isActive || currentConversationIdRef.current !== convId) return;
       try {
         const url =
-          liveSyncCount % 4 === 0
+          liveSyncCount % 10 === 0
             ? `/api/adbox/messages/live?conversationId=${encodeURIComponent(convId)}&pageId=${encodeURIComponent(pageId)}`
             : `/api/adbox/messages?conversationId=${encodeURIComponent(convId)}`;
         const res = await fetch(url);
@@ -423,35 +423,42 @@ export default function AdBoxPage() {
       if (dbData.length > 0) {
         setConversations(dbData);
         hasData = true;
-        setLoadingChat(false);
       }
-    } catch {}
+      setLoadingChat(false);
+    } catch {
+      setLoadingChat(false);
+    }
+
+    const syncTask = async () => {
+      try {
+        const selectedPages = pages.filter((p) => pageIds.includes(p.id));
+        if (selectedPages.length === 0) return;
+        await syncConversationsOnce(
+          selectedPages.map((p) => ({ id: p.id, access_token: p.access_token }))
+        );
+        const merged = await fetchConversationsFromDB(pageIds);
+        if (merged.length > 0) {
+          setConversations(merged);
+          setSelectedConversation((s) => {
+            if (!s) return s;
+            const updated = merged.find((c) => c.id === s.id);
+            if (updated && (updated.adId !== s.adId || updated.facebookLink !== s.facebookLink))
+              return { ...s, ...updated };
+            return s;
+          });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Sync failed';
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 6000);
+        console.error('AdBox sync error:', err);
+      }
+    };
 
     if (forceSync) {
-      const syncTask = async () => {
-        try {
-          const selectedPages = pages.filter((p) => pageIds.includes(p.id));
-          if (selectedPages.length === 0) {
-            setToastMessage('No pages selected. Please select pages first.');
-            setTimeout(() => setToastMessage(null), 4000);
-            return;
-          }
-          await syncConversationsOnce(
-            selectedPages.map((p) => ({ id: p.id, access_token: p.access_token }))
-          );
-          const merged = await fetchConversationsFromDB(pageIds);
-          if (merged.length > 0) setConversations(merged);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Sync failed';
-          setToastMessage(msg);
-          setTimeout(() => setToastMessage(null), 6000);
-          console.error('AdBox sync error:', err);
-        }
-        if (!hasData) setLoadingChat(false);
-      };
-      hasData ? syncTask() : await syncTask();
-    } else if (!hasData) {
-      setLoadingChat(false);
+      syncTask();
+    } else {
+      setTimeout(syncTask, 800);
     }
   };
 
@@ -1010,8 +1017,9 @@ export default function AdBoxPage() {
                   </div>
                 )}
                 {loadingMessages && messages.length === 0 ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <Loader2 className="h-6 w-6 animate-spin mb-3" />
+                    <p>{t('adbox.loadingMessages', 'กำลังโหลดข้อความ')}</p>
                   </div>
                 ) : messages.length > 0 ? (
                   <>
@@ -1094,7 +1102,7 @@ export default function AdBoxPage() {
                   </>
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">
-                    <p>Start the conversation</p>
+                    <p>{t('adbox.startConversation', 'Start the conversation')}</p>
                   </div>
                 )}
               </div>

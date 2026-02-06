@@ -23,6 +23,7 @@ export function BillingSettings() {
     const [userPlan, setUserPlan] = useState<string>('FREE');
     const [loading, setLoading] = useState(true);
     const [upgradeLoading, setUpgradeLoading] = useState<string | null>(null);
+    const [portalLoading, setPortalLoading] = useState(false);
 
     const defaultTab = searchParams.get('tab') || 'subscription';
     const [activeTab, setActiveTab] = useState(defaultTab);
@@ -50,6 +51,31 @@ export function BillingSettings() {
             })
             .catch(() => setLoading(false));
     }, []);
+
+    useEffect(() => {
+        const success = searchParams.get('success');
+        const canceled = searchParams.get('canceled');
+        if (success === 'true') {
+            fetch('/api/user/plan').then(r => r.json()).then(data => setUserPlan((data.plan || 'FREE').toUpperCase()));
+            router.replace(pathname + '?tab=subscription', { scroll: false });
+        } else if (canceled === 'true') {
+            router.replace(pathname + '?tab=subscription', { scroll: false });
+        }
+    }, [searchParams, pathname, router]);
+
+    const handleManageBilling = async () => {
+        setPortalLoading(true);
+        try {
+            const res = await fetch('/api/stripe/portal', { method: 'POST' });
+            const data = await res.json();
+            if (data.url) window.location.href = data.url;
+            else alert(data.error || 'Failed to open billing portal');
+        } catch {
+            alert('Failed to open billing portal');
+        } finally {
+            setPortalLoading(false);
+        }
+    };
 
     const handleUpgrade = async (planKey: string) => {
         if (planKey === 'FREE') return;
@@ -166,20 +192,31 @@ export function BillingSettings() {
                                                     ))}
                                                 </ul>
 
-                                                <Button
-                                                    variant={isCurrent ? 'outline' : 'default'}
-                                                    className={`w-full ${isCurrent ? 'cursor-default' : ''}`}
-                                                    onClick={() => !isCurrent && handleUpgrade(plan.key)}
-                                                    disabled={isCurrent || upgradeLoading !== null}
-                                                >
-                                                    {upgradeLoading === plan.key ? (
-                                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                                    ) : isCurrent ? (
-                                                        t('settings.billing.currentPlan', 'Current Plan')
-                                                    ) : (
-                                                        t('settings.billing.upgrade', 'Upgrade')
-                                                    )}
-                                                </Button>
+                                                {isCurrent && (userPlan === 'PLUS' || userPlan === 'PRO') ? (
+                                                    <Button
+                                                        variant="outline"
+                                                        className="w-full"
+                                                        onClick={handleManageBilling}
+                                                        disabled={portalLoading}
+                                                    >
+                                                        {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('settings.billing.manage', 'Manage Subscription')}
+                                                    </Button>
+                                                ) : (
+                                                    <Button
+                                                        variant={isCurrent ? 'outline' : 'default'}
+                                                        className={`w-full ${isCurrent ? 'cursor-default' : ''}`}
+                                                        onClick={() => !isCurrent && handleUpgrade(plan.key)}
+                                                        disabled={isCurrent || upgradeLoading !== null}
+                                                    >
+                                                        {upgradeLoading === plan.key ? (
+                                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                                        ) : isCurrent ? (
+                                                            t('settings.billing.currentPlan', 'Current Plan')
+                                                        ) : (
+                                                            t('settings.billing.upgrade', 'Upgrade')
+                                                        )}
+                                                    </Button>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -197,11 +234,19 @@ export function BillingSettings() {
                             <div className="my-6 h-[1px] bg-border" />
                             <div className="flex flex-col items-center justify-center py-12 text-center">
                                 <CreditCard className="h-12 w-12 text-muted-foreground/20 mb-4" />
-                                <h3 className="text-lg font-medium text-foreground">No payment methods yet</h3>
+                                <h3 className="text-lg font-medium text-foreground">
+                                    {userPlan === 'PLUS' || userPlan === 'PRO'
+                                        ? t('settings.billing.managePayment', 'Manage payment methods')
+                                        : 'No payment methods yet'}
+                                </h3>
                                 <p className="text-muted-foreground mt-2 max-w-sm">
-                                    Add a payment method to upgrade your plan and manage your subscription.
+                                    {userPlan === 'PLUS' || userPlan === 'PRO'
+                                        ? t('settings.billing.portalDesc', 'Update payment method, view invoices, or cancel subscription.')
+                                        : 'Add a payment method to upgrade your plan.'}
                                 </p>
-                                <Button variant="outline" className="mt-6">Add Payment Method</Button>
+                                <Button variant="outline" className="mt-6" onClick={handleManageBilling} disabled={portalLoading}>
+                                    {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : (userPlan === 'PLUS' || userPlan === 'PRO' ? t('settings.billing.manage', 'Manage Billing') : 'Add Payment Method')}
+                                </Button>
                             </div>
                         </TabsContent>
 
@@ -213,12 +258,21 @@ export function BillingSettings() {
                                 </p>
                             </div>
                             <div className="my-6 h-[1px] bg-border" />
-                             <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <div className="flex flex-col items-center justify-center py-12 text-center">
                                 <FileText className="h-12 w-12 text-muted-foreground/20 mb-4" />
-                                <h3 className="text-lg font-medium text-foreground">No invoices history</h3>
+                                <h3 className="text-lg font-medium text-foreground">
+                                    {userPlan === 'PLUS' || userPlan === 'PRO' ? t('settings.billing.viewInvoices', 'View and download invoices') : 'No invoices history'}
+                                </h3>
                                 <p className="text-muted-foreground mt-2 max-w-sm">
-                                    Your invoice history will appear here once you make your first payment.
+                                    {userPlan === 'PLUS' || userPlan === 'PRO'
+                                        ? t('settings.billing.portalDesc', 'Open Stripe to view and download your invoices.')
+                                        : 'Your invoice history will appear here once you make your first payment.'}
                                 </p>
+                                {(userPlan === 'PLUS' || userPlan === 'PRO') && (
+                                    <Button variant="outline" className="mt-6" onClick={handleManageBilling} disabled={portalLoading}>
+                                        {portalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('settings.billing.manage', 'Open Billing Portal')}
+                                    </Button>
+                                )}
                             </div>
                         </TabsContent>
                     </div>

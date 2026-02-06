@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { syncMessagesOnce, fetchPages } from '@/app/actions/adbox';
+import { syncMessagesOnce } from '@/app/actions/adbox';
 import { adboxDb } from '@/lib/adbox-db';
 
 export const dynamic = 'force-dynamic';
@@ -37,9 +37,7 @@ export async function GET(req: NextRequest) {
     if (now - last >= SYNC_COOLDOWN_MS) {
       lastSyncAt[cacheKey] = now;
       try {
-        const pages = await fetchPages();
-        const page = pages.find((p: { id: string }) => p.id === pageId);
-        await syncMessagesOnce(conversationId, pageId, page?.access_token);
+        await syncMessagesOnce(conversationId, pageId);
       } catch (e) {
         const err = e as Error;
         if (!err.message?.includes('Unsupported get request') && !err.message?.includes('invalid')) {

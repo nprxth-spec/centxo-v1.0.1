@@ -1,32 +1,28 @@
 import Stripe from 'stripe';
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_mock', {
-    apiVersion: '2025-12-15.clover',
-    typescript: true,
-});
+const secretKey = process.env.STRIPE_SECRET_KEY;
+if (!secretKey && process.env.NODE_ENV === 'production') {
+  console.warn('STRIPE_SECRET_KEY is not set - billing will not work');
+}
+
+export const stripe = secretKey ? new Stripe(secretKey, { typescript: true }) : null;
 
 export const PLANS = [
-    {
-        name: 'FREE',
-        price: 0,
-        priceId: '', // No price ID for free
-        limit: 10,
-        features: ['10 Ad Accounts', 'Basic Analytics', 'Standard Support'],
-    },
-    {
-        name: 'PLUS',
-        price: 39,
-        priceId: process.env.STRIPE_PRICE_ID_PLUS || '',
-        limit: 20,
-        features: ['20 Ad Accounts', 'Advanced Analytics', 'Priority Support', 'AI Optimization'],
-    },
-    {
-        name: 'PRO',
-        price: 99,
-        priceId: process.env.STRIPE_PRICE_ID_PRO || '',
-        limit: 50,
-        features: ['50 Ad Accounts', 'Enterprise Analytics', 'Dedicated Support', 'Early Access Features'],
-    },
+  { name: 'FREE', price: 0, priceId: '', limit: 10, features: [] },
+  {
+    name: 'PLUS',
+    price: 39,
+    priceId: process.env.STRIPE_PRICE_ID_PLUS || '',
+    limit: 20,
+    features: ['20 Ad Accounts', 'Advanced Analytics', 'Priority Support', 'AI Optimization'],
+  },
+  {
+    name: 'PRO',
+    price: 99,
+    priceId: process.env.STRIPE_PRICE_ID_PRO || '',
+    limit: 50,
+    features: ['50 Ad Accounts', 'Enterprise Analytics', 'Dedicated Support', 'Early Access'],
+  },
 ];
 
 export function getPlanByPriceId(priceId: string) {
