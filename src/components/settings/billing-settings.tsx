@@ -56,8 +56,13 @@ export function BillingSettings() {
         const success = searchParams.get('success');
         const canceled = searchParams.get('canceled');
         if (success === 'true') {
-            fetch('/api/user/plan').then(r => r.json()).then(data => setUserPlan((data.plan || 'FREE').toUpperCase()));
+            const refetch = () =>
+                fetch('/api/user/plan').then(r => r.json()).then(data => setUserPlan((data.plan || 'FREE').toUpperCase()));
+            refetch();
+            // Retry after 2.5s in case webhook was slower than redirect
+            const t = setTimeout(refetch, 2500);
             router.replace(pathname + '?tab=subscription', { scroll: false });
+            return () => clearTimeout(t);
         } else if (canceled === 'true') {
             router.replace(pathname + '?tab=subscription', { scroll: false });
         }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { stripe, getPlanByPriceId } from '@/lib/stripe';
+import { stripe, getPlanByPriceId, getPlanByName } from '@/lib/stripe';
 import { prisma } from '@/lib/prisma';
 import Stripe from 'stripe';
 
@@ -38,7 +38,13 @@ export async function POST(request: NextRequest) {
         const item = sub.items.data[0];
         if (!item) break;
 
-        const plan = getPlanByPriceId(item.price.id);
+        // Prefer metadata.planName (from checkout) over price ID lookup
+        const planFromMeta = session.metadata.planName
+          ? getPlanByName(session.metadata.planName)
+          : null;
+        const plan = planFromMeta?.name && planFromMeta.name !== 'FREE'
+          ? planFromMeta
+          : getPlanByPriceId(item.price.id);
         await prisma.user.update({
           where: { id: session.metadata.userId },
           data: {
