@@ -133,11 +133,10 @@ export function openGooglePicker(
                             }
                         });
 
-                    if (apiKey) {
-                        builder.setDeveloperKey?.(apiKey);
+                    if (builder) {
+                        if (apiKey) builder.setDeveloperKey?.(apiKey);
+                        builder.build().setVisible(true);
                     }
-
-                    builder.build().setVisible(true);
                 })
         );
 }
