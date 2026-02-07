@@ -121,7 +121,7 @@ export const authOptions: NextAuthOptions = {
             allowDangerousEmailAccountLinking: true,
             authorization: {
                 params: {
-                    scope: 'openid email profile https://www.googleapis.com/auth/spreadsheets',
+                    scope: 'openid email profile https://www.googleapis.com/auth/drive.file',
                     access_type: 'offline',
                     prompt: 'consent',
                 },

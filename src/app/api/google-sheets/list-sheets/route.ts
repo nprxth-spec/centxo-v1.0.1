@@ -11,18 +11,16 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const { spreadsheetUrl } = await request.json()
+        const { spreadsheetUrl, spreadsheetId: idFromBody } = await request.json()
 
-        if (!spreadsheetUrl) {
-            return NextResponse.json({ error: 'Spreadsheet URL is required' }, { status: 400 })
+        let spreadsheetId: string | null = idFromBody || null
+        if (!spreadsheetId && spreadsheetUrl) {
+            const match = String(spreadsheetUrl).match(/\/d\/([a-zA-Z0-9-_]+)/)
+            spreadsheetId = match ? match[1] : null
         }
 
-        // Extract Spreadsheet ID
-        const match = spreadsheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/)
-        const spreadsheetId = match ? match[1] : null
-
         if (!spreadsheetId) {
-            return NextResponse.json({ error: 'Invalid Google Sheets URL' }, { status: 400 })
+            return NextResponse.json({ error: 'Spreadsheet URL or ID is required' }, { status: 400 })
         }
 
         // Get User Tokens

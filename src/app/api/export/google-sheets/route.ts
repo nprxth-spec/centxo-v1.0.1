@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
         const {
             name,
             spreadsheetUrl,
+            spreadsheetId: spreadsheetIdFromBody,
             spreadsheetName,
             sheetName,
             dataType,
@@ -52,17 +53,17 @@ export async function POST(request: NextRequest) {
             useAdAccountTimezone
         } = body
 
-        // Extract spreadsheet ID from URL
-        const spreadsheetId = extractSpreadsheetId(spreadsheetUrl)
+        const spreadsheetId = spreadsheetIdFromBody || extractSpreadsheetId(spreadsheetUrl)
+        const resolvedUrl = spreadsheetUrl || (spreadsheetId ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit` : '')
         if (!spreadsheetId) {
-            return NextResponse.json({ error: 'Invalid Google Sheets URL' }, { status: 400 })
+            return NextResponse.json({ error: 'Invalid Google Sheets URL or ID' }, { status: 400 })
         }
 
         const config = await (prisma as any).exportConfig.create({
             data: {
                 userId: session.user.id,
                 name,
-                spreadsheetUrl,
+                spreadsheetUrl: resolvedUrl,
                 spreadsheetId,
                 spreadsheetName,
                 sheetName,
@@ -118,8 +119,9 @@ export async function PUT(request: NextRequest) {
             return NextResponse.json({ error: 'Config not found' }, { status: 404 })
         }
 
-        // Extract spreadsheet ID if URL changed
-        if (updateData.spreadsheetUrl) {
+        if (updateData.spreadsheetId) {
+            updateData.spreadsheetUrl = updateData.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${updateData.spreadsheetId}/edit`
+        } else if (updateData.spreadsheetUrl) {
             updateData.spreadsheetId = extractSpreadsheetId(updateData.spreadsheetUrl)
         }
 

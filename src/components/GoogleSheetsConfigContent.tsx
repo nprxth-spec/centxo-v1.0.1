@@ -36,6 +36,7 @@ import {
 // Original code used Tabs?
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Image from "next/image"
+import Script from "next/script"
 import { translations } from "./export-feature-translations"
 import { useLanguage } from "@/contexts/LanguageContext"
 import { useConfig } from "@/contexts/AdAccountContext"
@@ -44,6 +45,7 @@ export interface ExportConfig {
     id?: string
     name: string
     spreadsheetUrl: string
+    spreadsheetId?: string
     spreadsheetName?: string
     sheetName: string
     dataType: string
@@ -177,6 +179,7 @@ export default function GoogleSheetsConfigContent({
     const t = translations[lang]
 
     const [step, setStep] = useState(1) // 1: Basic, 2: Column Mapping, 3: Schedule
+    const [mounted, setMounted] = useState(false)
     const [isLoading, setIsLoading] = useState(false)
     const [savedConfigs, setSavedConfigs] = useState<ExportConfig[]>([])
     const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null)
@@ -320,6 +323,8 @@ export default function GoogleSheetsConfigContent({
             console.error('Error fetching configs:', error)
         }
     }, [dataType])
+
+    useEffect(() => setMounted(true), [])
 
     // Fetch Google Status and Saved Configs (accounts come from AdAccountContext = settings/connections)
     useEffect(() => {
@@ -709,45 +714,63 @@ export default function GoogleSheetsConfigContent({
     const [availableSheets, setAvailableSheets] = useState<{ title: string, sheetId: number }[]>([])
     const [isFetchingSheets, setIsFetchingSheets] = useState(false)
 
-    const handleConnectSheet = async () => {
-        if (!config.spreadsheetUrl) {
-            toast.error(t.enter_url_error)
-            return
-        }
-
+    const fetchSheetsForId = async (spreadsheetId: string, spreadsheetName: string, spreadsheetUrl: string) => {
         setIsFetchingSheets(true)
         try {
             const res = await fetch('/api/google-sheets/list-sheets', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ spreadsheetUrl: config.spreadsheetUrl })
+                body: JSON.stringify({ spreadsheetId, spreadsheetUrl })
             })
-
             const data = await res.json()
-
             if (res.ok) {
-                console.log('Spreadsheet data:', data)
                 setAvailableSheets(data.sheets)
                 setConfig(prev => ({
                     ...prev,
-                    spreadsheetId: data.spreadsheetId,
-                    spreadsheetName: data.spreadsheetName || 'Google Sheets',
+                    spreadsheetId,
+                    spreadsheetUrl,
+                    spreadsheetName: data.spreadsheetName || spreadsheetName || 'Google Sheets',
                     sheetName: data.sheets[0]?.title || 'Sheet1'
                 }))
-                toast.success('เชื่อมต่อสำเร็จ! กรุณาเลือก Sheet')
-            } else {
-                throw new Error(data.error)
-            }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                toast.success(lang === 'th' ? 'เชื่อมต่อสำเร็จ! กรุณาเลือก Sheet' : 'Connected! Please select a sheet')
+            } else throw new Error(data.error)
         } catch (error: any) {
-            toast.error(error.message || 'ไม่สามารถเชื่อมต่อได้')
+            toast.error(error?.message || (lang === 'th' ? 'ไม่สามารถเชื่อมต่อได้' : 'Failed to connect'))
         } finally {
             setIsFetchingSheets(false)
         }
     }
 
+    const handleSelectFromDrive = () => {
+        const pickerUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/ads-manager/google-sheets-export/picker`
+        const width = 600
+        const height = 600
+        const left = window.screenX + (window.outerWidth - width) / 2
+        const top = window.screenY + (window.outerHeight - height) / 2
+        const popup = window.open(
+            pickerUrl,
+            'google-picker',
+            `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes`
+        )
+        if (!popup) {
+            toast.error(lang === 'th' ? 'กรุณาอนุญาตป๊อปอัปสำหรับหน้านี้' : 'Please allow popups for this site')
+            return
+        }
+        const handler = (e: MessageEvent) => {
+            if (e.origin !== window.location.origin || e.data?.type !== 'GOOGLE_PICKER_PICKED') return
+            window.removeEventListener('message', handler)
+            const { id, name } = e.data
+            if (id) {
+                const url = `https://docs.google.com/spreadsheets/d/${id}/edit`
+                fetchSheetsForId(id, name || 'Untitled', url)
+            }
+        }
+        window.addEventListener('message', handler)
+    }
+
     return (
         <div className={cn("space-y-6", standalone ? "p-6 max-w-4xl mx-auto bg-white rounded-lg shadow-sm" : "", className)}>
+            <Script src="https://apis.google.com/js/api.js" strategy="lazyOnload" />
 
             {standalone && (
                 <div className="flex items-center gap-2 mb-6 pb-4 border-b">
@@ -960,7 +983,7 @@ export default function GoogleSheetsConfigContent({
                                         Settings → Connections → Ad Accounts
                                     </a>
                                 </p>
-                                {accountsLoading ? (
+                                {!mounted || accountsLoading ? (
                                     <div className="h-[300px] flex items-center justify-center border rounded-xl bg-muted/30">
                                         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                                     </div>
@@ -1043,23 +1066,42 @@ export default function GoogleSheetsConfigContent({
                         </div>
                     )}
 
-                    {/* Step 2: Connect Google Sheet */}
+                    {/* Step 2: Connect Google Sheet (Picker - drive.file scope) */}
                     {step === 2 && (
                         <div className="space-y-6">
                             <div className="space-y-2">
                                 <Label>{t.sheet_url}</Label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        placeholder={t.sheet_url_placeholder}
-                                        value={config.spreadsheetUrl}
-                                        onChange={e => setConfig({ ...config, spreadsheetUrl: e.target.value })}
-                                    />
-                                    <Button onClick={handleConnectSheet} disabled={isFetchingSheets}>
-                                        {isFetchingSheets ? <Loader2 className="h-4 w-4 animate-spin" /> : t.connect_btn}
+                                <div className="flex flex-col sm:flex-row gap-2">
+                                    <Button
+                                        variant="outline"
+                                        className="flex-1 justify-start gap-2"
+                                        onClick={handleSelectFromDrive}
+                                        disabled={isFetchingSheets}
+                                    >
+                                        {isFetchingSheets ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <FileSpreadsheet className="h-4 w-4" />
+                                        )}
+                                        {config.spreadsheetName
+                                            ? (lang === 'th' ? `เลือกอยู่: ${config.spreadsheetName}` : `Selected: ${config.spreadsheetName}`)
+                                            : (lang === 'th' ? 'เลือก Google Sheet จาก Drive' : 'Select Google Sheet from Drive')}
                                     </Button>
+                                    {config.spreadsheetUrl && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                                setConfig(prev => ({ ...prev, spreadsheetUrl: '', spreadsheetName: '' }))
+                                                setAvailableSheets([])
+                                            }}
+                                        >
+                                            {lang === 'th' ? 'เปลี่ยน' : 'Change'}
+                                        </Button>
+                                    )}
                                 </div>
                                 <p className="text-xs text-gray-500">
-                                    {lang === 'th' ? 'วางลิงก์ Google Sheet ที่คุณต้องการส่งออกข้อมูลไป' : 'Paste the Google Sheet URL where you want to export data'}
+                                    {lang === 'th' ? 'กดปุ่มด้านบนเพื่อเลือก Google Sheet จาก Google Drive ของคุณ (ใช้ drive.file scope)' : 'Click the button above to select a Google Sheet from your Drive (drive.file scope)'}
                                 </p>
                             </div>
 
