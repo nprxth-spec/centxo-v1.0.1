@@ -213,8 +213,10 @@ export async function GET(req: NextRequest) {
         // Email members (Admin/Employee): add their Facebook connections if they've connected via Meta OAuth
         const emailMembers = finalTeamMembers.filter((m: any) => m.memberType === 'email' && m.memberEmail);
         for (const member of emailMembers) {
+            const email = member.memberEmail?.trim();
+            if (!email) continue;
             const memberUser = await prisma.user.findUnique({
-                where: { email: member.memberEmail.trim() },
+                where: { email },
                 select: {
                     id: true,
                     metaAccount: { select: { metaUserId: true, accessToken: true } },

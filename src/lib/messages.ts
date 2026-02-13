@@ -58,7 +58,6 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'adsManager.superTarget': 'Super Target',
     'nav.reportTools': 'Report Tools',
     'nav.googleSheetsExport': 'Google Sheets Export',
-    'nav.settings': 'Settings',
     'nav.adbox': 'Inbox',
     'nav.manageComments': 'Manage Comments',
 
@@ -1692,7 +1691,6 @@ export const messages: Record<SupportedLanguage, Record<string, string>> = {
     'adsManager.superTarget': 'กลุ่มเป้าหมายขั้นสูง',
     'nav.reportTools': 'เครื่องมือรายงาน',
     'nav.googleSheetsExport': 'ส่งออก Google Sheets',
-    'nav.settings': 'ตั้งค่า',
     'nav.adbox': 'Inbox',
     'nav.manageComments': 'จัดการความคิดเห็น',
 
