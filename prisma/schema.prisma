@@ -1,0 +1,495 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String       @id @default(cuid())
+  name          String?
+  email         String?      @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  role          String       @default("USER") // USER, ADMIN, SUPER_ADMIN
+  accounts      Account[]
+  metaAccount   MetaAccount?
+  teamMembers   TeamMember[]
+  isTeamHost    Boolean      @default(true)
+
+  // Subscription Fields
+  plan               String    @default("FREE") // FREE, PLUS, PRO
+  stripeCustomerId   String?   @unique
+  subscriptionStatus String?
+  subscriptionId     String?
+  currentPeriodEnd   DateTime?
+
+  // AI Usage Tracking
+  aiUsageCount       Int       @default(0)
+  aiUsageResetAt     DateTime?
+
+  // AdBox - Facebook Messenger Inbox (pages, messaging)
+  facebookPageToken  String?   @db.Text
+
+  sessions           Session[]
+  iceBreakerTemplates IceBreakerTemplate[]
+  automationRules    AutomationRule[]
+  interestPresets    InterestAudiencePreset[]
+}
+
+model AutomationRule {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  enabled      Boolean  @default(true)
+  scope        String   // "campaign" | "adset" | "ad"
+  adAccountIds String   @db.Text // JSON array of act_ IDs; empty "[]" = all connected
+  condition    Json     // { metric, op, value } e.g. { "metric": "roas", "op": "lt", "value": 1.5 }
+  action       Json     // { "type": "pause" | "reduce_budget", "value"?: number }
+  lastRunAt    DateTime?
+  lastResult   String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Custom tracking fields
+  userAgent    String?  @db.Text
+  ipAddress    String?
+  lastActive   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@index([userId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model MetaAccount {
+  id                 String     @id @default(cuid())
+  userId             String     @unique
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  metaUserId         String     @unique
+  accessToken        String     @db.Text
+  accessTokenExpires DateTime
+  adAccountId        String?
+  adAccountName      String?
+  pageId             String?
+  pageName           String?
+  pageAccessToken    String?    @db.Text
+  campaigns          Campaign[]
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+}
+
+model Campaign {
+  id             String            @id @default(cuid())
+  metaCampaignId String            @unique
+  name           String
+  objective      String            @default("MESSAGES") // MESSAGES, OUTCOME_TRAFFIC, etc.
+  status         String // ACTIVE, PAUSED, ARCHIVED
+  dailyBudget    Float             @default(20.0) // USD
+  metaAccountId  String
+  metaAccount    MetaAccount       @relation(fields: [metaAccountId], references: [id])
+  videoPath      String            @db.Text // Local path or S3 URL
+  videoAssetId   String? // Meta video asset ID
+  adSets         AdSet[]
+  insights       CampaignInsight[]
+  auditLogs      AuditLog[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([metaAccountId])
+}
+
+model AdSet {
+  id          String         @id @default(cuid())
+  metaAdSetId String         @unique
+  campaignId  String
+  campaign    Campaign       @relation(fields: [campaignId], references: [id])
+  status      String // ACTIVE, PAUSED
+  targeting   Json // Store targeting criteria
+  dailyBudget Float          @default(20.0)
+  ads         Ad[]
+  insights    AdSetInsight[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([campaignId])
+}
+
+model Ad {
+  id           String      @id @default(cuid())
+  metaAdId     String      @unique
+  adSetId      String
+  adSet        AdSet       @relation(fields: [adSetId], references: [id])
+  status       String // ACTIVE, PAUSED
+  adCreativeId String
+  adCreative   AdCreative  @relation(fields: [adCreativeId], references: [id])
+  isWinner     Boolean     @default(false)
+  insights     AdInsight[]
+  auditLogs    AuditLog[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([adSetId])
+}
+
+model AdCreative {
+  id                 String         @id @default(cuid())
+  metaCreativeId     String         @unique
+  videoAssetId       String
+  primaryTextTH      String         @db.Text
+  primaryTextEN      String         @db.Text
+  headlineTH         String?        @db.Text
+  headlineEN         String?        @db.Text
+  ctaMessagePromptTH String         @db.Text
+  ctaMessagePromptEN String         @db.Text
+  ads                Ad[]
+  aiAnalysisLogId    String?
+  aiAnalysisLog      AIAnalysisLog? @relation(fields: [aiAnalysisLogId], references: [id])
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+}
+
+model AIAnalysisLog {
+  id             String       @id @default(cuid())
+  mediaHash      String       @unique
+  mediaPath      String?      @db.Text
+  analysisResult Json
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  adCreatives    AdCreative[]
+}
+
+model CampaignInsight {
+  id             String   @id @default(cuid())
+  date           DateTime
+  campaignId     String
+  campaign       Campaign @relation(fields: [campaignId], references: [id])
+  spend          Float
+  messages       Int
+  costPerMessage Float
+  createdAt      DateTime @default(now())
+
+  @@unique([campaignId, date])
+}
+
+model AdInsight {
+  id             String   @id @default(cuid())
+  date           DateTime
+  adId           String
+  ad             Ad       @relation(fields: [adId], references: [id])
+  spend          Float
+  messages       Int
+  costPerMessage Float
+  createdAt      DateTime @default(now())
+
+  @@unique([adId, date])
+}
+
+model AdSetInsight {
+  id             String   @id @default(cuid())
+  date           DateTime
+  adSetId        String
+  adSet          AdSet    @relation(fields: [adSetId], references: [id])
+  spend          Float
+  messages       Int
+  costPerMessage Float?
+  createdAt      DateTime @default(now())
+
+  @@unique([adSetId, date])
+}
+
+model DecisionLog {
+  id         String   @id @default(cuid())
+  entityType String // "Campaign", "AdSet", "Ad"
+  entityId   String
+  action     String // "PAUSE", "RESUME", "MARK_WINNER"
+  reason     String   @db.Text
+  metadata   Json? // Additional context
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String    @id @default(cuid())
+  userId     String?
+  action     String // "CREATE_CAMPAIGN", "PAUSE_AD", "API_CALL"
+  entityType String?
+  entityId   String?
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id])
+  adId       String?
+  ad         Ad?       @relation(fields: [adId], references: [id])
+  details    Json?
+  ipAddress  String?
+  userAgent  String?   @db.Text
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model FacebookInterest {
+  id                     String   @id @default(cuid())
+  fbId                   String   @unique
+  name                   String   // English (default)
+  nameTH                 String?  // Thai
+  nameEN                 String?  // English (explicit)
+  audienceSizeLowerBound BigInt?
+  audienceSizeUpperBound BigInt?
+  path                   Json?
+  topic                  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([name])
+  @@index([nameTH])
+}
+
+model ExportConfig {
+  id              String  @id @default(cuid())
+  userId          String
+  name            String
+  spreadsheetUrl  String  @db.Text
+  spreadsheetId   String
+  spreadsheetName String?
+  sheetName       String
+  dataType        String // ads, campaigns, adsets, accounts
+  columnMapping   String  @db.Text // JSON string
+
+  // Auto Export
+  autoExportEnabled Boolean @default(false)
+  exportFrequency   String? // daily, hourly
+  exportHour        Int?
+  exportMinute      Int?
+  exportInterval    Int? // hours lookback (1, 6, 12, 24)
+
+  appendMode  Boolean @default(true)
+  includeDate Boolean @default(true)
+
+  accountIds String? @db.Text // JSON string array of account IDs
+
+  useAdAccountTimezone Boolean @default(false)
+  adAccountTimezone    String? // e.g., "Asia/Bangkok"
+
+  lastExportAt     DateTime?
+  lastExportStatus String? // SUCCESS, FAILED
+  lastExportError  String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model TeamMember {
+  id     String @id @default(cuid())
+  userId String // The host/owner user ID
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Member type: 'facebook' or 'email'
+  memberType String @default("facebook") // facebook, email
+
+  // For email-based members
+  memberEmail String? // Email of the team member
+  memberName  String? // Name of the team member
+
+  // Facebook account details (for Facebook members)
+  facebookUserId     String?  @unique
+  facebookName       String?
+  facebookEmail      String?
+  accessToken        String?  @db.Text
+  accessTokenExpires DateTime?
+  refreshToken       String?  @db.Text
+
+  // Team role: OWNER (host), ADMIN (full access), EMPLOYEE (view-only settings)
+  role String @default("EMPLOYEE")
+
+  // Metadata
+  addedAt    DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@index([facebookUserId])
+  @@index([memberEmail])
+  @@unique([userId, memberEmail])
+}
+
+model IceBreakerTemplate {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String   // e.g. "แฟชั่น", "ความงาม"
+  items     Json     // [{ question: string, payload: string }]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model InterestAudiencePreset {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?  @db.Text // User's original description (Thai/English)
+  interests   Json     // [{ id: string, name: string }] - Meta interest IDs and names
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// =============================================
+// AdBox - Facebook Messenger Inbox
+// =============================================
+
+model Conversation {
+  id             String    @id // Facebook Conversation ID
+  pageId         String
+  updatedAt      DateTime  @updatedAt
+  lastMessageAt  DateTime  @default(now())
+  snippet        String?   @db.Text
+  unreadCount    Int       @default(0)
+  lastReadAt     DateTime?
+  participantId  String?
+  participantName String?
+  facebookLink   String?   @db.Text
+  adId           String?
+  adName         String?
+  assigneeId     String?
+  viewedBy       String?
+  viewedByName   String?
+  viewedAt       DateTime?
+  messages       Message[]
+  notes          String?   @db.Text
+  labels         String?   @db.Text // JSON array of strings
+
+  @@index([pageId])
+  @@index([pageId, lastMessageAt])
+  @@index([adId])
+  @@index([lastMessageAt])
+  @@index([assigneeId])
+}
+
+model Message {
+  id             String       @id // Facebook Message ID
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  senderName     String?
+  content        String?      @db.Text
+  attachments    String?      @db.Text // JSON
+  stickerUrl     String?      @db.Text
+  createdAt      DateTime
+  isFromPage     Boolean      @default(false)
+
+  @@index([conversationId])
+}
+
+model PageSettings {
+  id                     String   @id @default(cuid())
+  pageId                 String   @unique
+  rotationMode           String   @default("OFF")
+  distributionMethod     String   @default("EQUAL")
+  keepAssignment         Boolean  @default(false)
+  shuffleUsers           Boolean  @default(false)
+  maxUsersPerChat        Int      @default(1)
+  activeRotationUserIds  String?  @db.Text // JSON
+  transferIfUnreadMinutes Int?
+  transferIfOffline      Boolean  @default(false)
+  unreadLimitPerUser     Int?
+  rotationSchedule       String   @default("ALWAYS")
+  nonSelectedCanViewAll  Boolean  @default(false)
+  assignToNonSelected    String?
+  updatedAt              DateTime @updatedAt
+}
+
+// =============================================
+// Subscription Packages (Page-based)
+// =============================================
+
+model Subscription {
+  id              String   @id @default(cuid())
+  packageId       String   @unique // 6-char unique code like "96Z00E"
+  userId          String
+  
+  // Package details
+  name            String   @default("Centxo") // Package name
+  type            String   @default("custom") // trial, mini, standard, pro, custom
+  
+  // Limits
+  pagesLimit      Int      @default(5)
+  usersLimit      Int      @default(5)
+  adAccountsLimit Int     @default(0)
+  
+  // Pricing
+  amount          Int      @default(0) // Price in THB
+  durationMonths  Int      @default(1) // Duration in months
+  
+  // Status
+  status          String   @default("active") // active, expired, cancelled
+  autoRenew       Boolean  @default(false)
+  
+  // Dates
+  startDate       DateTime @default(now())
+  expiresAt       DateTime
+  
+  // Selected pages, users, ad accounts (JSON arrays of IDs)
+  selectedPageIds     String?  @db.Text // JSON array
+  selectedUserIds     String?  @db.Text // JSON array
+  selectedAdAccountIds String? @db.Text // JSON array
+  
+  // Idempotency: when created via Stripe Checkout (custom plan payment)
+  stripeCheckoutSessionId String? @unique
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([userId, status])
+}
+

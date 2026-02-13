@@ -1,0 +1,15 @@
+{
+  "status": "init",
+  "type": "frontend",
+  "localEndpoint": "http://localhost:3000",
+  "executionArgs": {
+    "projectName": "centxo.v1.0.1",
+    "projectPath": "c:\\Users\\ADMINSER\\Desktop\\centxo.v1.0.1",
+    "testIds": [],
+    "additionalInstruction": "Verify that the login page at http://localhost:3000/login is working correctly. Check for the existence of email/password fields and the login button.",
+    "envs": {
+      "API_KEY": "sk-user-D7l2UlNW_AAzEX_eyT9tKFqoHsALfWAa4EsU_ISxaj7he2ljhkqMionq59kkeATWGZZorxBMcu7eOslTlSoZndSsuANC2yjxK-op6UIZEkPLTrWDCuvYI924CBqwbMvVkyI"
+    }
+  },
+  "serverPort": 55418
+}

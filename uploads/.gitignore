@@ -1,0 +1,6 @@
+# Ignore uploaded files
+videos/
+*.mp4
+*.webm
+*.mov
+*.avi

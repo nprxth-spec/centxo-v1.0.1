@@ -1,0 +1,15 @@
+[
+    {
+        "id": "TC_LOGIN_001",
+        "title": "Login Page Verification",
+        "description": "Verify the existence of login fields and buttons on the login page.",
+        "category": "functional",
+        "priority": "High",
+        "steps": [
+            "Navigate to http://localhost:3000/login",
+            "Verify email input is visible",
+            "Verify password input is visible",
+            "Verify login submit button is visible"
+        ]
+    }
+]
