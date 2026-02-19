@@ -8,8 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getAdboxAccessToken } from '@/app/actions/adbox';
-import { getPageAccessToken } from '@/lib/facebook-adbox';
+import { getInboxAccessToken } from '@/app/actions/inbox';
+import { getPageAccessToken } from '@/lib/facebook-inbox';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -36,7 +36,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const userToken = await getAdboxAccessToken();
+    const userToken = await getInboxAccessToken();
     if (!userToken) {
       return NextResponse.json({ adId: null, ad: null });
     }

@@ -38,7 +38,13 @@ export async function refreshAccessToken(refreshToken: string) {
 }
 
 export function getGoogleSheetsClient(accessToken: string) {
-    const auth = new google.auth.OAuth2()
+    // Use the same OAuth2 client configuration as Picker session
+    // This ensures the token is validated against the correct OAuth client
+    const auth = new google.auth.OAuth2(
+        GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET,
+        GOOGLE_REDIRECT_URI
+    )
     auth.setCredentials({ access_token: accessToken })
     return google.sheets({ version: 'v4', auth })
 }

@@ -8,8 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { syncMessagesOnce } from '@/app/actions/adbox';
-import { adboxDb } from '@/lib/adbox-db';
+import { syncMessagesOnce } from '@/app/actions/inbox';
+import { inboxDb } from '@/lib/inbox-db';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,17 +41,17 @@ export async function GET(req: NextRequest) {
       } catch (e) {
         const err = e as Error;
         if (!err.message?.includes('Unsupported get request') && !err.message?.includes('invalid')) {
-          console.warn('[adbox live] Sync error:', err.message);
+          console.warn('[inbox live] Sync error:', err.message);
         }
       }
     }
 
-    const conv = await adboxDb.findConversationById(conversationId);
+    const conv = await inboxDb.findConversationById(conversationId);
     if (!conv) {
       return NextResponse.json({ messages: [], synced: false });
     }
 
-    const raw = await adboxDb.findMessagesByConversation(conversationId, 500);
+    const raw = await inboxDb.findMessagesByConversation(conversationId, 500);
     const messages = raw.map((m) => ({
       id: m.id,
       message: m.content,

@@ -3,11 +3,11 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { adboxDb } from '@/lib/adbox-db';
-import { getPages, getPageConversations, getConversationMessages, sendMessage } from '@/lib/facebook-adbox';
+import { inboxDb } from '@/lib/inbox-db';
+import { getPages, getPageConversations, getConversationMessages, sendMessage } from '@/lib/facebook-inbox';
 import { decryptToken } from '@/lib/services/metaClient';
 
-export async function getAdboxAccessToken(): Promise<string | null> {
+export async function getInboxAccessToken(): Promise<string | null> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return null;
 
@@ -61,10 +61,10 @@ export async function getAdboxAccessToken(): Promise<string | null> {
 
 const PAGES_CACHE_TTL = 60 * 60 * 1000; // 60 min - reduce gr:get:User/accounts
 declare global {
-  var _adboxPagesCache: Record<string, { data: unknown[]; timestamp: number }> | undefined;
+  var _inboxPagesCache: Record<string, { data: unknown[]; timestamp: number }> | undefined;
 }
-const pagesCache = globalThis._adboxPagesCache ?? {};
-if (typeof globalThis !== 'undefined') globalThis._adboxPagesCache = pagesCache;
+const pagesCache = globalThis._inboxPagesCache ?? {};
+if (typeof globalThis !== 'undefined') globalThis._inboxPagesCache = pagesCache;
 
 export async function fetchPages() {
   const session = await getServerSession(authOptions);
@@ -76,7 +76,7 @@ export async function fetchPages() {
     return JSON.parse(JSON.stringify(cached.data));
   }
 
-  const accessToken = await getAdboxAccessToken();
+  const accessToken = await getInboxAccessToken();
   if (!accessToken) {
     throw new Error('No Facebook token found. Please connect Facebook in Account > Team.');
   }
@@ -91,14 +91,14 @@ export async function fetchPages() {
   }
 }
 
-export async function fetchConversationsFromDB(pageIds: string[]) {
+export async function fetchConversationsFromDB(pageIds: string[], limit = 50) {
   const session = await getServerSession(authOptions);
   if (!session?.user) throw new Error('Not authenticated');
 
   if (pageIds.length === 0) return [];
 
   try {
-    const conversations = await adboxDb.findConversationsWithMessages(pageIds, 100);
+    const conversations = await inboxDb.findConversationsWithMessages(pageIds, limit);
     const byKey = new Map<string, { c: typeof conversations[0]; lastMessageAt: Date; adId: string | null; facebookLink: string | null }>();
     for (const c of conversations) {
       const pid = c.participantId || (c.messages[0] as { senderId?: string } | undefined)?.senderId || '';
@@ -175,15 +175,15 @@ export async function fetchConversationsFromDB(pageIds: string[]) {
   }
 }
 
-export async function fetchMessagesFromDB(conversationId: string) {
+export async function fetchMessagesFromDB(conversationId: string, limit = 100) {
   const session = await getServerSession(authOptions);
   if (!session?.user) throw new Error('Not authenticated');
 
   try {
-    const conversation = await adboxDb.findConversationById(conversationId);
+    const conversation = await inboxDb.findConversationById(conversationId);
     if (!conversation) return [];
 
-    const messages = await adboxDb.findMessagesByConversation(conversationId, 500);
+    const messages = await inboxDb.findMessagesByConversation(conversationId, limit);
     return messages.map((m) => ({
       id: m.id,
       message: m.content,
@@ -208,7 +208,7 @@ export async function sendReply(
   const session = await getServerSession(authOptions);
   if (!session?.user) throw new Error('Not authenticated');
 
-  const accessToken = await getAdboxAccessToken();
+  const accessToken = await getInboxAccessToken();
   // if (!accessToken) throw new Error('No Facebook token found');
 
   if (!accessToken && !pageAccessToken) {
@@ -217,7 +217,7 @@ export async function sendReply(
 
   try {
     // ตรวจสอบว่าเวลาผ่านไป 24 ชั่วโมงหรือยัง
-    const conversation = await adboxDb.findConversationById(conversationId);
+    const conversation = await inboxDb.findConversationById(conversationId);
     const now = new Date();
     const lastMessageAt = conversation?.lastMessageAt
       ? (conversation.lastMessageAt instanceof Date
@@ -249,7 +249,7 @@ export async function sendReply(
     });
 
     try {
-      await adboxDb.createMessage({
+      await inboxDb.createMessage({
         id: (result as { message_id?: string }).message_id || `temp-${Date.now()}`,
         conversationId,
         senderId: pageId,
@@ -258,7 +258,7 @@ export async function sendReply(
         createdAt: new Date(),
         isFromPage: true,
       });
-      await adboxDb.updateConversation(conversationId, {
+      await inboxDb.updateConversation(conversationId, {
         lastMessageAt: new Date(),
         snippet: messageText,
       });
@@ -286,7 +286,7 @@ export async function sendReply(
   }
 }
 
-const SYNC_PAGES_CONCURRENCY = 5;
+const SYNC_PAGES_CONCURRENCY = 3; // Reduced from 5 to 3 for better performance with many pages
 
 async function syncOnePageConversations(
   accessToken: string | null,
@@ -295,7 +295,7 @@ async function syncOnePageConversations(
   const pageConversations: Array<Record<string, unknown>> = [];
   try {
     const convs = await getPageConversations(accessToken, page.id, page.access_token);
-    const existingConvs = await adboxDb.findConversationsByPageIds([page.id]);
+    const existingConvs = await inboxDb.findConversationsByPageIds([page.id]);
     const existingMap = new Map(existingConvs.map((c) => [c.id, c]));
 
     for (const conv of convs as Array<Record<string, unknown>>) {
@@ -325,7 +325,7 @@ async function syncOnePageConversations(
       // Preserve existing adId from DB if conversation API didn't return one
       const convAdId = (conv.ad_id as string) || existing?.adId || null;
 
-      await adboxDb.upsertConversation(
+      await inboxDb.upsertConversation(
         conv.id as string,
         {
           pageId: page.id,
@@ -368,7 +368,7 @@ export async function syncConversationsOnce(pages: { id: string; access_token?: 
   const session = await getServerSession(authOptions);
   if (!session?.user) throw new Error('Not authenticated');
 
-  const accessToken = await getAdboxAccessToken();
+  const accessToken = await getInboxAccessToken();
   // if (!accessToken) throw new Error('No Facebook token found');
 
   try {
@@ -404,7 +404,7 @@ export async function syncMessagesOnce(
   const session = await getServerSession(authOptions);
   if (!session?.user) throw new Error('Not authenticated');
 
-  const accessToken = await getAdboxAccessToken();
+  const accessToken = await getInboxAccessToken();
   // if (!accessToken) throw new Error('No Facebook token found');
 
   try {
@@ -456,7 +456,7 @@ export async function syncMessagesOnce(
         if (!attachmentsJson) attachmentsJson = JSON.stringify([{ type: 'sticker', url: msg.sticker }]);
       }
 
-      await adboxDb.upsertMessage(
+      await inboxDb.upsertMessage(
         msg.id as string,
         {
           conversationId,
@@ -489,7 +489,7 @@ export async function markConversationAsRead(conversationId: string) {
   if (!session?.user) throw new Error('Not authenticated');
 
   try {
-    await adboxDb.updateConversation(conversationId, {
+    await inboxDb.updateConversation(conversationId, {
       unreadCount: 0,
       lastReadAt: new Date(),
     });
@@ -505,7 +505,7 @@ export async function updateConversationViewer(conversationId: string) {
   if (!session?.user) throw new Error('Not authenticated');
 
   try {
-    await adboxDb.updateConversation(conversationId, {
+    await inboxDb.updateConversation(conversationId, {
       viewedBy: session.user.id,
       viewedByName: session.user.name || 'Unknown',
       viewedAt: new Date(),
@@ -526,7 +526,7 @@ export async function markConversationAsUnread(conversationId: string) {
   if (!session?.user) throw new Error('Not authenticated');
 
   try {
-    await adboxDb.updateConversation(conversationId, {
+    await inboxDb.updateConversation(conversationId, {
       unreadCount: 1,
       lastReadAt: new Date(0),
     });
@@ -542,7 +542,7 @@ export async function updateConversationNotes(conversationId: string, notes: str
   if (!session?.user) throw new Error('Not authenticated');
 
   try {
-    await adboxDb.updateConversation(conversationId, { notes });
+    await inboxDb.updateConversation(conversationId, { notes });
     return { success: true };
   } catch (error) {
     console.error('Failed to update notes:', error);
@@ -555,7 +555,7 @@ export async function addConversationLabel(conversationId: string, label: string
   if (!session?.user) throw new Error('Not authenticated');
 
   try {
-    const conv = await adboxDb.findConversationById(conversationId);
+    const conv = await inboxDb.findConversationById(conversationId);
     let labels: string[] = [];
     if (conv?.labels) {
       try {
@@ -564,7 +564,7 @@ export async function addConversationLabel(conversationId: string, label: string
     }
     if (!labels.includes(label)) {
       labels.push(label);
-      await adboxDb.updateConversation(conversationId, { labels: JSON.stringify(labels) });
+      await inboxDb.updateConversation(conversationId, { labels: JSON.stringify(labels) });
     }
     return { success: true };
   } catch (error) {
@@ -578,7 +578,7 @@ export async function removeConversationLabel(conversationId: string, label: str
   if (!session?.user) throw new Error('Not authenticated');
 
   try {
-    const conv = await adboxDb.findConversationById(conversationId);
+    const conv = await inboxDb.findConversationById(conversationId);
     let labels: string[] = [];
     if (conv?.labels) {
       try {
@@ -587,11 +587,25 @@ export async function removeConversationLabel(conversationId: string, label: str
     }
     if (labels.includes(label)) {
       labels = labels.filter((l) => l !== label);
-      await adboxDb.updateConversation(conversationId, { labels: JSON.stringify(labels) });
+      await inboxDb.updateConversation(conversationId, { labels: JSON.stringify(labels) });
     }
     return { success: true };
   } catch (error) {
     console.error('Failed to remove label:', error);
+    return { success: false };
+  }
+}
+
+export async function updateParticipantPicture(participantId: string, imageUrl: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) throw new Error('Not authenticated');
+
+  try {
+    // Participant pictures are often not stored in DB directly but we can update conversation record if needed
+    // or just return success for now if this is called from UI
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to update participant picture:', error);
     return { success: false };
   }
 }

@@ -68,15 +68,16 @@ export function ManageAccessContent({
             setAutoRenew(subscription.autoRenew || false);
             setPackageName(subscription.name || '');
         }
-    }, [subscription]);
+    }, [subscription?.id, JSON.stringify(subscription?.selectedPageIds ?? []), JSON.stringify(subscription?.selectedUserIds ?? []), JSON.stringify(subscription?.selectedAdAccountIds ?? [])]);
 
     // Simple tab change handler - no URL sync to avoid conflicts with parent Settings tabs
     const handleTabChange = (tab: string) => {
         setActiveTab(tab);
     };
 
+    // Only load data when packageId changes - avoids refetch on every parent re-render
     useEffect(() => {
-        if (subscription) {
+        if (packageId) {
             setLoading(true);
             setPagesError(null);
             setPagesHint(null);
@@ -129,7 +130,7 @@ export function ManageAccessContent({
             };
             loadData(false);
         }
-    }, [subscription]);
+    }, [packageId, t]);
 
     const filteredPages = pages.filter(
         (p) =>

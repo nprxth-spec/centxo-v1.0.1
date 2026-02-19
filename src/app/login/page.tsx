@@ -64,13 +64,13 @@ function LoginPageContent() {
             setError(t('login.error.invalidCredentials'));
             setLoading(null);
         } else if (result?.ok) {
-            router.push('/home');
+            router.push('/dashboard');
         }
     };
 
     const handleGoogleSignIn = async () => {
         setLoading('google');
-        await signIn('google', { callbackUrl: "/home" });
+        await signIn('google', { callbackUrl: "/dashboard" });
     };
 
 

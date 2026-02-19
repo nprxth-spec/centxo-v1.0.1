@@ -24,6 +24,7 @@ interface PickerBuilder {
     setOrigin?: (origin: string) => PickerBuilder;
     setRelayUrl?: (url: string) => PickerBuilder;
     setDeveloperKey?: (key: string) => PickerBuilder;
+    setAppId?: (appId: string) => PickerBuilder;
     setCallback: (callback: (data: PickerCallbackData) => void) => PickerBuilder;
     build: () => { setVisible: (visible: boolean) => void };
 }
@@ -47,30 +48,59 @@ const SCRIPT_URL = 'https://apis.google.com/js/api.js';
 function loadScript(): Promise<void> {
     if (typeof window === 'undefined') return Promise.reject(new Error('Window not available'));
     const existing = document.querySelector(`script[src="${SCRIPT_URL}"]`);
-    if (existing && (window as any).gapi) return Promise.resolve();
+    if (existing && (window as any).gapi) {
+        console.log('Google API script already loaded');
+        return Promise.resolve();
+    }
 
     if (existing) {
-        return new Promise((resolve) => {
+        console.log('Script tag exists, waiting for gapi...');
+        return new Promise((resolve, reject) => {
+            let attempts = 0;
+            const maxAttempts = 100; // 5 seconds max
             const check = () => {
-                if ((window as any).gapi) return resolve();
+                attempts++;
+                if ((window as any).gapi) {
+                    console.log('gapi loaded after', attempts, 'attempts');
+                    return resolve();
+                }
+                if (attempts >= maxAttempts) {
+                    reject(new Error('Timeout waiting for Google API to load'));
+                    return;
+                }
                 setTimeout(check, 50);
             };
             check();
         });
     }
 
+    console.log('Loading Google API script...');
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.src = SCRIPT_URL;
         script.async = true;
+        let attempts = 0;
+        const maxAttempts = 100; // 5 seconds max
         script.onload = () => {
+            console.log('Script onload fired');
             const check = () => {
-                if ((window as any).gapi) return resolve();
+                attempts++;
+                if ((window as any).gapi) {
+                    console.log('gapi loaded after', attempts, 'attempts');
+                    return resolve();
+                }
+                if (attempts >= maxAttempts) {
+                    reject(new Error('Timeout waiting for Google API to load'));
+                    return;
+                }
                 setTimeout(check, 50);
             };
             check();
         };
-        script.onerror = () => reject(new Error('Failed to load Google API script'));
+        script.onerror = () => {
+            console.error('Script failed to load');
+            reject(new Error('Failed to load Google API script'));
+        };
         document.head.appendChild(script);
     });
 }
@@ -96,18 +126,30 @@ export interface PickResult {
 
 export function openGooglePicker(
     accessToken: string,
-    apiKey?: string
+    apiKey?: string,
+    appId?: string
 ): Promise<PickResult | null> {
     return loadScript()
-        .then(loadPicker)
-        .then(
-            () =>
-                new Promise<PickResult | null>((resolve) => {
-                    if (!window.google?.picker) {
-                        resolve(null);
-                        return;
-                    }
+        .then(() => {
+            console.log('Script loaded, loading picker...');
+            return loadPicker();
+        })
+        .then(() => {
+            console.log('Picker loaded');
+            return new Promise<PickResult | null>((resolve, reject) => {
+                if (!window.google?.picker) {
+                    console.error('Google Picker not available');
+                    reject(new Error('Google Picker not available'));
+                    return;
+                }
 
+                // Set timeout to reject if picker doesn't respond
+                const timeout = setTimeout(() => {
+                    console.warn('Picker timeout - no response after 5 minutes');
+                    // Don't reject, just resolve null - user might still be interacting
+                }, 5 * 60 * 1000);
+
+                try {
                     const view = new window.google.picker.DocsView(window.google.picker.ViewId.SPREADSHEETS);
                     view.setMimeTypes('application/vnd.google-apps.spreadsheet');
 
@@ -115,28 +157,61 @@ export function openGooglePicker(
                         ? `${window.location.protocol}//${window.location.host}`
                         : 'http://localhost:3000';
                     const relayUrl = origin;
-                    const builder = new window.google.picker.PickerBuilder()
-                        .addView(view)
-                        .setOAuthToken(accessToken)
-                        .setOrigin?.(origin)
-                        .setRelayUrl?.(relayUrl)
-                        .setCallback((data: PickerCallbackData) => {
-                            if (data.action === 'picked' && data.docs?.length) {
-                                const doc = data.docs[0];
-                                resolve({
-                                    id: doc.id,
-                                    name: doc.name || 'Untitled',
-                                    url: `https://docs.google.com/spreadsheets/d/${doc.id}/edit`,
-                                });
-                            } else {
-                                resolve(null);
-                            }
-                        });
 
-                    if (builder) {
-                        if (apiKey) builder.setDeveloperKey?.(apiKey);
-                        builder.build().setVisible(true);
+                    console.log('Creating picker builder...', { origin, hasApiKey: !!apiKey, hasToken: !!accessToken, hasAppId: !!appId });
+
+                    const builder = new window.google.picker.PickerBuilder();
+                    builder.addView(view);
+                    builder.setOAuthToken(accessToken);
+
+                    if (builder.setOrigin) builder.setOrigin(origin);
+                    if (builder.setRelayUrl) builder.setRelayUrl(relayUrl);
+
+                    builder.setCallback((data: PickerCallbackData) => {
+                        console.log('Picker callback:', data);
+                        if (data.action === 'picked' && data.docs?.length) {
+                            clearTimeout(timeout);
+                            const doc = data.docs[0];
+                            console.log('File picked:', doc);
+                            resolve({
+                                id: doc.id,
+                                name: doc.name || 'Untitled',
+                                url: `https://docs.google.com/spreadsheets/d/${doc.id}/edit`,
+                            });
+                        } else if (data.action === 'cancel') {
+                            clearTimeout(timeout);
+                            console.log('Picker cancelled');
+                            resolve(null);
+                        } else if (data.action === 'loaded') {
+                            console.log('Picker loaded successfully, waiting for user selection...');
+                            // Don't resolve here - wait for picked or cancel
+                        } else {
+                            console.log('Picker action:', data.action, '- ignoring');
+                            // Don't resolve for other actions - wait for picked or cancel
+                        }
+                    });
+
+                    if (apiKey && builder.setDeveloperKey) {
+                        builder.setDeveloperKey(apiKey);
                     }
-                })
-        );
+
+                    if (appId && builder.setAppId) {
+                        builder.setAppId(appId);
+                    }
+
+                    const picker = builder.build();
+                    console.log('Showing picker...');
+                    picker.setVisible(true);
+                    console.log('Picker setVisible called');
+                } catch (error) {
+                    clearTimeout(timeout);
+                    console.error('Error creating picker:', error);
+                    reject(error);
+                }
+            });
+        })
+        .catch((error) => {
+            console.error('Error in openGooglePicker:', error);
+            throw error;
+        });
 }

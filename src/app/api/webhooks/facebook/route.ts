@@ -1,14 +1,14 @@
 /**
- * Facebook Webhook - AdBox Messenger
+ * Facebook Webhook - Inbox Messenger
  * GET: Verification (Facebook requires this to subscribe)
  * POST: Receive messaging events - saves to DB for instant delivery
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { adboxDb } from '@/lib/adbox-db';
+import { inboxDb } from '@/lib/inbox-db';
 
 const VERIFY_TOKEN =
-  process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN || 'centxo_adbox_verify_token';
+  process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN || 'centxo_inbox_verify_token';
 
 export async function GET(req: NextRequest) {
   const searchParams = req.nextUrl.searchParams;
@@ -41,11 +41,11 @@ export async function POST(req: NextRequest) {
         const standaloneReferral = event.referral as { ad_id?: string; source?: string } | undefined;
         if (standaloneReferral?.source === 'ADS' && standaloneReferral?.ad_id) {
           const adId = String(standaloneReferral.ad_id);
-          const conv = await adboxDb.findConversationByPageAndParticipant(pageId, senderId);
+          const conv = await inboxDb.findConversationByPageAndParticipant(pageId, senderId);
           const convId = conv?.id || `t_${pageId}_${senderId}`;
           const now = new Date(event.timestamp || Date.now());
           if (!conv) {
-            await adboxDb.upsertConversation(
+            await inboxDb.upsertConversation(
               convId,
               {
                 pageId,
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
               { lastMessageAt: now, adId }
             );
           } else {
-            await adboxDb.updateConversation(convId, { adId });
+            await inboxDb.updateConversation(convId, { adId });
           }
           continue;
         }
@@ -89,12 +89,12 @@ export async function POST(req: NextRequest) {
           content = sticker ? '[Sticker]' : image ? '[Image]' : '[Attachment]';
         }
 
-        let conv = await adboxDb.findConversationByPageAndParticipant(pageId, senderId);
+        let conv = await inboxDb.findConversationByPageAndParticipant(pageId, senderId);
         const convId = conv?.id || `t_${pageId}_${senderId}`;
         const now = new Date(event.timestamp || Date.now());
         const snippet = (content || '').slice(0, 200);
         if (!conv) {
-          await adboxDb.upsertConversation(
+          await inboxDb.upsertConversation(
             convId,
             {
               pageId,
@@ -119,12 +119,12 @@ export async function POST(req: NextRequest) {
             unreadCount: (conv.unreadCount || 0) + 1,
           };
           if (adId) updateData.adId = adId;
-          await adboxDb.updateConversation(convId, updateData);
+          await inboxDb.updateConversation(convId, updateData);
         }
 
         if (mid) {
           try {
-            await adboxDb.upsertMessage(
+            await inboxDb.upsertMessage(
               mid,
               {
                 conversationId: convId,

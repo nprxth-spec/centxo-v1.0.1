@@ -39,10 +39,12 @@ export async function middleware(req: NextRequest) {
     // ============================================
     // Route Redirects for Minimal Navigation
     // ============================================
-    
-    // Redirect /dashboard to /home
-    if (pathname === "/dashboard") {
-        return NextResponse.redirect(new URL("/home", req.url));
+
+    // Redirect /dashboard to /home (REMOVED: /dashboard is now the primary route)
+
+    // Redirect /home to /dashboard
+    if (pathname === "/home") {
+        return NextResponse.redirect(new URL("/dashboard", req.url));
     }
 
     // Redirect /account to /settings (account settings are now in /settings)
@@ -54,11 +56,11 @@ export async function middleware(req: NextRequest) {
         return NextResponse.redirect(url);
     }
 
-    // Redirect old adbox-v to inbox
+    // Redirect old inbox-v to inbox (legacy redirect)
     if (pathname === "/adbox-v" || pathname.startsWith("/adbox-v/")) {
         return NextResponse.redirect(new URL("/inbox", req.url));
     }
-    
+
     // Redirect /adbox to /inbox
     if (pathname === "/adbox" || pathname.startsWith("/adbox/")) {
         return NextResponse.redirect(new URL("/inbox", req.url));
@@ -77,7 +79,7 @@ export async function middleware(req: NextRequest) {
     // Redirect /ads-manager/* to /ads?tab=*
     if (pathname.startsWith("/ads-manager")) {
         const url = new URL("/ads", req.url);
-        
+
         if (pathname.includes("/campaigns")) {
             url.searchParams.set('tab', 'campaigns');
         } else if (pathname.includes("/accounts")) {
@@ -87,7 +89,7 @@ export async function middleware(req: NextRequest) {
         } else {
             url.searchParams.set('tab', 'campaigns');
         }
-        
+
         return NextResponse.redirect(url);
     }
 
@@ -115,7 +117,7 @@ export async function middleware(req: NextRequest) {
     }
 
     // 3. Protected App Routes
-    const appProtectedPaths = ["/home", "/ads", "/create", "/settings", "/inbox", "/tools"];
+    const appProtectedPaths = ["/dashboard", "/ads", "/create", "/settings", "/inbox", "/tools"];
     if (appProtectedPaths.some(path => pathname === path || pathname.startsWith(path + "/"))) {
         if (!isAuth) {
             const url = new URL("/login", req.url);
@@ -130,24 +132,25 @@ export async function middleware(req: NextRequest) {
 export const config = {
     matcher: [
         // New routes
-        "/home/:path*",
+        "/dashboard/:path*",
         "/ads/:path*",
         "/create/:path*",
         "/settings/:path*",
         "/inbox/:path*",
         "/tools/:path*",
-        
+
         // Old routes (for redirects)
         "/dashboard/:path*",
         "/account/:path*",
         "/launch/:path*",
         "/create-ads/:path*",
         "/ads-manager/:path*",
+        "/inbox/:path*",
         "/adbox/:path*",
         "/adbox-v",
         "/adbox-v/:path*",
         "/audiences/:path*",
-        
+
         // Admin routes
         "/admin/:path*"
     ],

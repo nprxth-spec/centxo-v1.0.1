@@ -99,7 +99,32 @@
   }
 
   .glass-card {
-    @apply rounded-lg bg-white/95 shadow-sm dark:bg-card/95 backdrop-blur-md border border-white/20 dark:border-white/5;
+    @apply rounded-xl bg-white/80 dark:bg-card/80 backdrop-blur-xl border border-white/20 dark:border-white/5 shadow-xl;
+  }
+
+  .glass-premium {
+    @apply bg-white/40 dark:bg-white/5 backdrop-blur-2xl border border-white/20 dark:border-white/10 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)];
+  }
+
+  .bg-gradient-subtle {
+    background: radial-gradient(circle at 50% -20%, hsl(var(--primary) / 0.1), transparent 70%);
+  }
+
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary via-violet-500 to-blue-500 bg-clip-text text-transparent;
+  }
+
+  .btn-premium {
+    @apply relative overflow-hidden transition-all duration-300 hover:scale-105 active:scale-95 shadow-lg hover:shadow-primary/30;
+  }
+
+  .btn-premium::after {
+    content: '';
+    @apply absolute inset-0 bg-white/20 opacity-0 transition-opacity duration-300;
+  }
+
+  .btn-premium:hover::after {
+    @apply opacity-100;
   }
 
   /* Minimal Scrollbar - Hide arrows, faint thumb */
@@ -163,7 +188,7 @@
     background-color: rgba(255, 255, 255, 0.2);
   }
 
-  /* สกอร์บาร์เล็ก บาง ใส ไม่มีหัวลูกศร (ใช้ในไดอะล็อกเลือกเพจ Adbox) */
+  /* สกอร์บาร์เล็ก บาง ใส ไม่มีหัวลูกศร (ใช้ในไดอะล็อกเลือกเพจ Inbox) */
   .scrollbar-thin-clear {
     scrollbar-width: thin;
     scrollbar-color: rgba(0, 0, 0, 0.15) transparent;

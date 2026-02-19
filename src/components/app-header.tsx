@@ -41,7 +41,7 @@ export default function AppHeader({ onMobileMenuToggle, isCollapsed = false }: A
     const searchParams = useSearchParams()
 
     // Check if we are on the inbox page
-    const isAdBoxPage = pathname?.startsWith('/inbox')
+    const isInboxPage = pathname?.startsWith('/inbox')
     const activeTab = searchParams.get('tab') || 'chat'
 
     // When on /inbox?tab=settings we have no slug in URL; use last saved slug so Chat link returns to single page
@@ -58,78 +58,20 @@ export default function AppHeader({ onMobileMenuToggle, isCollapsed = false }: A
     // Determine if we should use the split border style
     const isSettingsPage = pathname?.startsWith('/settings') || pathname?.startsWith('/account')
 
-    const sidebarWidth = isCollapsed ? 72 : 220
+    const sidebarWidth = isCollapsed ? 64 : 240
 
     return (
         <header className="relative flex items-center justify-between h-16 px-4 md:px-8 z-20 sticky top-0 bg-card/95 backdrop-blur-xl">
-            {/* Split border: dashed over sidebar, solid over content (v1.0.1) */}
-            {!isSettingsPage && (
-                <div className="absolute bottom-0 left-0 right-0 flex pointer-events-none">
-                    <div className="flex-shrink-0 border-b border-dashed border-border" style={{ width: sidebarWidth }} />
-                    <div className="flex-1 border-b border-border" />
-                </div>
-            )}
-            {isSettingsPage && (
-                <div className="absolute bottom-0 left-0 right-0 border-b border-dashed border-border pointer-events-none" />
-            )}
+            <div className="absolute bottom-0 left-0 right-0 border-b border-border pointer-events-none" />
 
             <div className="flex items-center gap-4 relative z-10">
-                {/* Mobile Menu Button */}
-                {onMobileMenuToggle && (
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="md:hidden text-foreground hover:bg-accent"
-                        onClick={onMobileMenuToggle}
-                    >
-                        <Menu className="h-6 w-6" />
-                    </Button>
-                )}
-
                 {/* Logo */}
-                <Link href="/home" className="flex items-center gap-2 md:mr-8">
-                    <img src="/centxo-logo.png" alt="Centxo" className="w-8 h-8 rounded-lg" />
-                    <span className="font-outfit font-bold text-xl tracking-tight text-foreground hidden md:block">Centxo</span>
+                <Link href="/dashboard" className="flex items-center gap-2">
+                    <img src="/centxo-logo.png" alt="Centxo" className="size-8 rounded-lg" />
+                    <span className="font-outfit font-bold text-xl tracking-tight text-foreground">Centxo</span>
                 </Link>
 
-                {/* AdBox Left Navigation */}
-                {isAdBoxPage && (
-                    <div className="flex items-center gap-1 ml-32">
-                        <Link
-                            href={chatHref}
-                            className={cn(
-                                "flex items-center justify-center w-24 py-2 text-sm font-medium rounded-md transition-all",
-                                activeTab === 'chat'
-                                    ? "text-foreground font-bold bg-accent/50"
-                                    : "text-muted-foreground hover:text-foreground hover:bg-accent/20"
-                            )}
-                        >
-                            Chat
-                        </Link>
-                        <Link
-                            href={`${chatHref}?tab=statistics`}
-                            className={cn(
-                                "flex items-center justify-center w-24 py-2 text-sm font-medium rounded-md transition-all",
-                                activeTab === 'statistics'
-                                    ? "text-foreground font-bold bg-accent/50"
-                                    : "text-muted-foreground hover:text-foreground hover:bg-accent/20"
-                            )}
-                        >
-                            Statistics
-                        </Link>
-                        <Link
-                            href="/inbox?tab=settings"
-                            className={cn(
-                                "flex items-center justify-center w-24 py-2 text-sm font-medium rounded-md transition-all",
-                                activeTab === 'settings'
-                                    ? "text-foreground font-bold bg-accent/50"
-                                    : "text-muted-foreground hover:text-foreground hover:bg-accent/20"
-                            )}
-                        >
-                            Settings
-                        </Link>
-                    </div>
-                )}
+                {/* Header title or Breadcrumb can go here */}
             </div>
 
 
@@ -180,6 +122,6 @@ export default function AppHeader({ onMobileMenuToggle, isCollapsed = false }: A
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
-        </header >
+        </header>
     )
 }

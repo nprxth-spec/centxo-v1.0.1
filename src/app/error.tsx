@@ -17,14 +17,14 @@ export default function Error({
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen p-4 space-y-4">
-            <div className="p-4 bg-red-50 text-red-900 rounded-full">
-                <AlertCircle className="w-12 h-12 text-red-600" />
+            <div className="p-4 bg-destructive/10 text-destructive rounded-full">
+                <AlertCircle className="w-12 h-12 text-destructive" />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900">Something went wrong!</h2>
-            <p className="text-gray-600 max-w-md text-center">
+            <h2 className="text-2xl font-bold text-foreground">Something went wrong!</h2>
+            <p className="text-muted-foreground max-w-md text-center">
                 {error.message || "An unexpected error occurred. Please try again."}
             </p>
-            <Button onClick={() => reset()} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={() => reset()} variant="default">
                 Try again
             </Button>
         </div>

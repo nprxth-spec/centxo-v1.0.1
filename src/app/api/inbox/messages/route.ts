@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { adboxDb } from '@/lib/adbox-db';
+import { inboxDb } from '@/lib/inbox-db';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,10 +24,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const conv = await adboxDb.findConversationById(conversationId);
+    const conv = await inboxDb.findConversationById(conversationId);
     if (!conv) return NextResponse.json({ messages: [] });
 
-    const raw = await adboxDb.findMessagesByConversation(conversationId, 500);
+    const raw = await inboxDb.findMessagesByConversation(conversationId, 500);
     const messages = raw.map((m: { id: string; content: string | null; attachments: string | null; stickerUrl: string | null; createdAt?: Date; senderId: string; senderName: string | null }) => ({
       id: m.id,
       message: m.content,

@@ -4,7 +4,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { User, CreditCard, Settings, Zap, Mail, Check, Layers, Smartphone, Sparkles, Sliders, ChevronRight, Loader2, FileText, Trash2, Users } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
@@ -825,6 +825,24 @@ export function AccountSettings() {
     // 14-Day Free Trial Logic (สำหรับผู้ใช้ที่มี subscription status = trial)
     const trialSub = subscriptions.find(s => s.status === 'trial');
     const isTrialActive = !!trialSub;
+
+    // Memoize subscription to avoid ManageAccessContent re-fetching on every parent re-render
+    const manageAccessSubscription = useMemo(() => {
+        const sub = isTrialActive ? trialSub : activeSubs[0];
+        if (!sub) return null;
+        return {
+            id: sub.id,
+            maxPages: sub.maxPages ?? sub.pagesLimit ?? 0,
+            maxUsers: sub.maxUsers ?? sub.usersLimit ?? 0,
+            maxAdAccounts: sub.maxAdAccounts ?? sub.adAccountsLimit ?? 0,
+            selectedPageIds: sub.selectedPageIds || [],
+            selectedUserIds: sub.selectedUserIds || [],
+            selectedAdAccountIds: sub.selectedAdAccountIds || [],
+            amount: sub.amount ?? 0,
+            autoRenew: sub.autoRenew ?? false,
+            name: sub.name || '',
+        };
+    }, [isTrialActive, trialSub, activeSubs[0]]);
     const trialDaysRemaining = trialSub ? Math.max(0, Math.ceil((new Date(trialSub.expiresAt || trialSub.expiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))) : 0;
 
     return (
@@ -1211,7 +1229,7 @@ export function AccountSettings() {
                 <div className="w-full lg:w-80 flex-shrink-0 space-y-6">
                     <div className="glass-card p-6">
                         <div className="mb-8">
-                            <h2 className="text-section-title">{t('accountPage.sidebar.title')}</h2>
+                            <h2 className="font-outfit font-bold text-xl tracking-tight text-foreground">{t('accountPage.sidebar.title')}</h2>
                             <p className="text-xs text-muted-foreground">{t('accountPage.sidebar.subtitle')}</p>
                         </div>
 
@@ -1377,7 +1395,7 @@ export function AccountSettings() {
                                                 </Card>
 
                                                 {/* Manage Resources Section - Integrated from Manage Access */}
-                                                {(activeSubs.length > 0 || isTrialActive) && (
+                                                {manageAccessSubscription && (
                                                     <Card className="p-6 border border-border bg-card">
                                                         <div className="flex items-center gap-3 mb-4">
                                                             <div className="p-2 bg-primary/10 rounded-lg">
@@ -1394,18 +1412,7 @@ export function AccountSettings() {
                                                         </div>
                                                         
                                                         <ManageAccessContent
-                                                            subscription={{
-                                                                id: isTrialActive ? trialSub?.id : activeSubs[0]?.id,
-                                                                maxPages: isTrialActive ? trialSub?.maxPages : activeSubs[0]?.maxPages,
-                                                                maxUsers: isTrialActive ? trialSub?.maxUsers : activeSubs[0]?.maxUsers,
-                                                                maxAdAccounts: isTrialActive ? trialSub?.maxAdAccounts : activeSubs[0]?.maxAdAccounts,
-                                                                selectedPageIds: isTrialActive ? trialSub?.selectedPageIds : activeSubs[0]?.selectedPageIds,
-                                                                selectedUserIds: isTrialActive ? trialSub?.selectedUserIds : activeSubs[0]?.selectedUserIds,
-                                                                selectedAdAccountIds: isTrialActive ? trialSub?.selectedAdAccountIds : activeSubs[0]?.selectedAdAccountIds,
-                                                                amount: isTrialActive ? 0 : activeSubs[0]?.amount,
-                                                                autoRenew: isTrialActive ? false : activeSubs[0]?.autoRenew,
-                                                                name: isTrialActive ? 'Trial' : activeSubs[0]?.name,
-                                                            }}
+                                                            subscription={manageAccessSubscription}
                                                             initialTab="pages"
                                                             onSaved={() => refreshSubscriptions()}
                                                         />

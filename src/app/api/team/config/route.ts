@@ -184,8 +184,8 @@ export async function GET(req: NextRequest) {
         const [clientAds, ownedAds, clientPgs, ownedPgs] = await Promise.all([
           fetchAllPaginated(`https://graph.facebook.com/v21.0/${b.id}/client_ad_accounts?fields=id,name,account_id,currency,account_status,business,owner&limit=500&access_token=${token}`, token),
           fetchAllPaginated(`https://graph.facebook.com/v21.0/${b.id}/owned_ad_accounts?fields=id,name,account_id,currency,account_status,business,owner&limit=500&access_token=${token}`, token),
-          fetchAllPaginated(`https://graph.facebook.com/v21.0/${b.id}/client_pages?fields=id,name,picture,is_published,access_token&limit=500&access_token=${token}`, token),
-          fetchAllPaginated(`https://graph.facebook.com/v21.0/${b.id}/owned_pages?fields=id,name,picture,is_published,access_token&limit=500&access_token=${token}`, token)
+          fetchAllPaginated(`https://graph.facebook.com/v21.0/${b.id}/client_pages?fields=id,name,username,picture,is_published,access_token&limit=500&access_token=${token}`, token),
+          fetchAllPaginated(`https://graph.facebook.com/v21.0/${b.id}/owned_pages?fields=id,name,username,picture,is_published,access_token&limit=500&access_token=${token}`, token)
         ]);
 
         const addAccount = (acc: any) => {
@@ -210,8 +210,10 @@ export async function GET(req: NextRequest) {
           pageToBusinessMap.set(p.id, b.name);
           if (!seenBusinessPageIds.has(p.id)) {
             seenBusinessPageIds.add(p.id);
+            console.log('[team/config] Business page:', { id: p.id, name: p.name, username: p.username, hasUsername: !!p.username });
             allBusinessPages.push({
               ...p,
+              username: p.username || null, // Ensure username is included
               business_name: b.name,
               _source: {
                 teamMemberId: member.id,
@@ -275,8 +277,10 @@ export async function GET(req: NextRequest) {
           if (!businessName) businessName = pageToBusinessMap.get(page.id);
           if (!businessName) businessName = page.business?.id ? `(Biz ID: ${page.business.id})` : 'Personal Page';
 
+          console.log('[team/config] Page from me/accounts:', { id: page.id, name: page.name, username: page.username, hasUsername: !!page.username });
           allPages.push({
             ...page,
+            username: page.username || null, // Ensure username is included
             business_name: businessName,
             _source: {
               teamMemberId: member.id,
@@ -294,7 +298,13 @@ export async function GET(req: NextRequest) {
     allPages.forEach((page: any) => {
       const idx = pageIdToIndex.get(page.id);
       if (idx !== undefined && page.access_token) {
-        allBusinessPages[idx] = { ...allBusinessPages[idx], access_token: page.access_token, picture: page.picture || allBusinessPages[idx].picture };
+        // Merge username from me/accounts if available
+        allBusinessPages[idx] = { 
+          ...allBusinessPages[idx], 
+          access_token: page.access_token, 
+          picture: page.picture || allBusinessPages[idx].picture,
+          username: page.username || allBusinessPages[idx].username || null // Preserve username
+        };
       }
     });
 
@@ -302,7 +312,10 @@ export async function GET(req: NextRequest) {
     allPages.forEach((page: any) => {
       if (!pageIdToIndex.has(page.id)) {
         pageIdToIndex.set(page.id, allBusinessPages.length);
-        allBusinessPages.push(page);
+        allBusinessPages.push({
+          ...page,
+          username: page.username || null // Ensure username is included
+        });
       }
     });
 
@@ -357,9 +370,56 @@ export async function GET(req: NextRequest) {
       const teamFiltered = teamPagesList.filter((page: any) => selectedPageIdsSet.has(page.id));
       const configFiltered = allPages.filter((page: any) => selectedPageIdsSet.has(page.id));
       const byId = new Map<string, any>();
-      teamFiltered.forEach((p: any) => byId.set(p.id, p));
-      configFiltered.forEach((p: any) => { if (!byId.has(p.id)) byId.set(p.id, p); });
+      teamFiltered.forEach((p: any) => {
+        console.log('[team/config] Team page:', { id: p.id, name: p.name, username: p.username, hasUsername: !!p.username });
+        byId.set(p.id, p);
+      });
+      configFiltered.forEach((p: any) => {
+        if (!byId.has(p.id)) {
+          console.log('[team/config] Config page:', { id: p.id, name: p.name, username: p.username, hasUsername: !!p.username });
+          byId.set(p.id, p);
+        }
+      });
       filteredPages = Array.from(byId.values());
+      
+      // Fetch usernames for pages that don't have them yet (similar to /api/ads)
+      const pagesWithoutUsername = filteredPages.filter((p: any) => !p.username && p.id);
+      if (pagesWithoutUsername.length > 0) {
+        try {
+          // Get a valid token (use first available token from team members)
+          const { getUserTokensOnly } = await import('@/lib/facebook/user-tokens-only');
+          const userTokens = await getUserTokensOnly(session);
+          if (userTokens.length > 0) {
+            const token = userTokens[0].token;
+            const IDS_PER_REQUEST = 50;
+            for (let i = 0; i < pagesWithoutUsername.length; i += IDS_PER_REQUEST) {
+              const chunk = pagesWithoutUsername.slice(i, i + IDS_PER_REQUEST);
+              const idsParam = chunk.map((p: any) => p.id).join(',');
+              try {
+                const res = await fetch(
+                  `https://graph.facebook.com/v22.0/?ids=${encodeURIComponent(idsParam)}&fields=name,username&access_token=${token}`
+                );
+                if (res.ok) {
+                  const data = await res.json();
+                  for (const page of chunk) {
+                    const pageData = data[page.id];
+                    if (pageData && !pageData.error && pageData.username) {
+                      page.username = pageData.username;
+                      console.log('[team/config] Fetched username for page:', { id: page.id, username: page.username });
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error('[team/config] Error fetching usernames:', e);
+              }
+            }
+          }
+        } catch (e) {
+          console.error('[team/config] Error fetching usernames:', e);
+        }
+      }
+      
+      console.log('[team/config] Filtered pages:', filteredPages.map(p => ({ id: p.id, name: p.name, username: p.username })));
     } else {
       filteredPages = [];
     }

@@ -190,7 +190,7 @@ export const authOptions: NextAuthOptions = {
         signOut: '/login',
         error: '/login',
         verifyRequest: '/login',
-        newUser: '/home',
+        newUser: '/dashboard',
     },
 
     session: {

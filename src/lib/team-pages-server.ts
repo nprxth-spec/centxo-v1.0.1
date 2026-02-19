@@ -1,6 +1,6 @@
 /**
  * Server-only: fetch team pages for a user (same list as /api/team/pages).
- * Used by team/config so adbox gets the exact pages the user selected on /account.
+ * Used by team/config so inbox gets the exact pages the user selected on /account.
  * Includes host's own token (MetaAccount/Account) when no team members — so Subscription Manage shows pages after connecting in Connections.
  */
 import { prisma } from '@/lib/prisma';
@@ -10,6 +10,7 @@ import { decryptToken } from '@/lib/services/metaClient';
 export type TeamPage = {
   id: string;
   name: string;
+  username?: string | null;
   picture?: any;
   access_token?: string;
   business?: any;
@@ -120,8 +121,10 @@ export async function getTeamPagesForUser(
         if (!businessName) businessName = pageToBusinessMap.get(page.id);
         if (!businessName) businessName = page.business?.id ? `(Biz ID: ${page.business.id})` : 'Personal Page';
 
+        console.log('[getTeamPagesForUser] Page from API:', { id: page.id, name: page.name, username: page.username, hasUsername: !!page.username });
         allPages.push({
           ...page,
+          username: page.username || null, // Ensure username is included
           business_name: businessName,
           _source: {
             teamMemberId: connection.source === 'teamMember' ? connection.id : '',

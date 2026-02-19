@@ -1,3 +1,3 @@
-import AdBoxPageWrapper from '../../adbox/page';
+import AdBoxPageWrapper from '../page';
 
 export default AdBoxPageWrapper;

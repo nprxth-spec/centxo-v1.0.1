@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getAdboxAccessToken, fetchPages } from '@/app/actions/adbox';
+import { getInboxAccessToken as getAdboxAccessToken, fetchPages } from '@/app/actions/inbox';
 
 const PICTURE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hr
 
@@ -26,9 +26,9 @@ export async function GET(req: NextRequest) {
 
     const participantId = req.nextUrl.searchParams.get('participantId');
     const pageId = req.nextUrl.searchParams.get('pageId');
-    
+
     console.log('[participant-picture] Request params:', { participantId, pageId });
-    
+
     if (!participantId) {
       console.warn('[participant-picture] Missing participantId');
       return NextResponse.json({ error: 'Missing participantId' }, { status: 400 });
@@ -56,11 +56,11 @@ export async function GET(req: NextRequest) {
     if (pageId) {
       try {
         const pages = await fetchPages();
-        const page = pages.find((p: { id: string }) => p.id === pageId);
+        const page = pages.find((p: { id: string, access_token?: string }) => p.id === pageId);
         if (page?.access_token) {
           pageToken = page.access_token;
           console.log('[participant-picture] Using page access token for page:', pageId);
-          
+
           // Debug: Check token permissions
           try {
             const debugUrl = `https://graph.facebook.com/v22.0/debug_token?input_token=${pageToken}&access_token=${pageToken}`;
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
             console.warn('[participant-picture] Could not debug token:', debugError);
           }
         } else {
-          console.warn('[participant-picture] Page access token not found, using user token. Page:', pageId, 'Available pages:', pages.map((p: { id: string }) => p.id));
+          console.warn('[participant-picture] Page access token not found, using user token. Page:', pageId);
         }
       } catch (pagesError) {
         console.error('[participant-picture] Error fetching pages:', pagesError);
@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
       console.log('[participant-picture] Trying User Profile API:', profileUrl.replace(pageToken, 'TOKEN_HIDDEN'));
       const profileRes = await fetch(profileUrl, { headers: { 'User-Agent': 'Centxo/1.0' } });
       const profileData = await profileRes.json();
-      
+
       if (profileData.error) {
         console.warn('[participant-picture] User Profile API error:', profileData.error);
         // Error code 100, subcode 33 = missing permissions (often in Development mode)
@@ -144,10 +144,10 @@ export async function GET(req: NextRequest) {
             },
           });
         }
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: apiData.error.message || 'Picture not found',
           code: apiData.error.code,
-          subcode: apiData.error.error_subcode 
+          subcode: apiData.error.error_subcode
         }, { status: 404 });
       }
 

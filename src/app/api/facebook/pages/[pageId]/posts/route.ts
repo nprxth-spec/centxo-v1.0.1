@@ -7,8 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getPageAccessToken } from '@/lib/facebook-adbox';
-import { getAdboxAccessToken } from '@/app/actions/adbox';
+import { getPageAccessToken } from '@/lib/facebook-inbox';
+import { getInboxAccessToken } from '@/app/actions/inbox';
 
 const fields = [
   'id',
@@ -133,7 +133,7 @@ export async function GET(
       return NextResponse.json({ error: 'pageId required' }, { status: 400 });
     }
 
-    const userToken = await getAdboxAccessToken();
+    const userToken = await getInboxAccessToken();
     if (!userToken) {
       return NextResponse.json(
         { error: 'Facebook not connected. Please connect in Account > Team.' },

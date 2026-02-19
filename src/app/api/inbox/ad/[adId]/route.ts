@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getAdboxAccessToken } from '@/app/actions/adbox';
+import { getInboxAccessToken } from '@/app/actions/inbox';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +27,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const accessToken = await getAdboxAccessToken();
+    const accessToken = await getInboxAccessToken();
     if (!accessToken) {
       return NextResponse.json({
         error: 'No ads token',

@@ -1,10 +1,10 @@
 /**
- * AdBox Database Operations - Prisma (PostgreSQL)
+ * Inbox Database Operations - Prisma (PostgreSQL)
  */
 
 import { prisma } from '@/lib/prisma';
 
-export const adboxDb = {
+export const inboxDb = {
   async findConversationById(id: string) {
     return prisma.conversation.findUnique({ where: { id } });
   },
@@ -34,11 +34,21 @@ export const adboxDb = {
     return prisma.conversation.update({ where: { id }, data: data as never });
   },
 
-  async findMessagesByConversation(conversationId: string, limit = 50) {
+  async findMessagesByConversation(conversationId: string, limit = 100) {
     const messages = await prisma.message.findMany({
       where: { conversationId },
       orderBy: { createdAt: 'desc' },
       take: limit,
+      select: {
+        id: true,
+        senderId: true,
+        senderName: true,
+        content: true,
+        attachments: true,
+        stickerUrl: true,
+        createdAt: true,
+        isFromPage: true,
+      },
     });
     return messages.reverse();
   },
@@ -65,15 +75,34 @@ export const adboxDb = {
     });
   },
 
-  async findConversationsWithMessages(pageIds: string[], limit = 100) {
+  async findConversationsWithMessages(pageIds: string[], limit = 50) {
     return prisma.conversation.findMany({
       where: { pageId: { in: pageIds } },
       orderBy: { lastMessageAt: 'desc' },
       take: limit,
-      include: {
+      select: {
+        id: true,
+        pageId: true,
+        lastMessageAt: true,
+        snippet: true,
+        unreadCount: true,
+        participantId: true,
+        participantName: true,
+        adId: true,
+        facebookLink: true,
+        notes: true,
+        labels: true,
         messages: {
           take: 1,
           orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            senderId: true,
+            senderName: true,
+            content: true,
+            createdAt: true,
+            isFromPage: true,
+          },
         },
       },
     });

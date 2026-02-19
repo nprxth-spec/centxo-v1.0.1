@@ -77,7 +77,7 @@ export function InboxStatistics({ pageIds, pageNames, selectionMode }: InboxStat
       timezone: tz,
     });
     if (mode === 'byUser') params.set('mode', 'byUser');
-    const url = `/api/adbox/statistics?${params.toString()}`;
+    const url = `/api/inbox/statistics?${params.toString()}`;
     fetch(url)
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch');
@@ -140,50 +140,50 @@ export function InboxStatistics({ pageIds, pageNames, selectionMode }: InboxStat
               )}
             </p>
           </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant={isToday ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setSelectedDate(new Date())}
-          >
-            {language === 'th' ? 'วันนี้' : 'Today'}
-          </Button>
-          <Button
-            variant={isYesterday ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setSelectedDate(subDays(new Date(), 1))}
-          >
-            {language === 'th' ? 'เมื่อวาน' : 'Yesterday'}
-          </Button>
-          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  'font-normal border-border/80 hover:bg-muted/50',
-                  !selectedDate && 'text-muted-foreground'
-                )}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                {selectedDate ? dateLabel : 'Pick date'}
-                <ChevronDown className="h-4 w-4 opacity-50 ml-1 shrink-0" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
-              <Calendar
-                mode="single"
-                selected={selectedDate}
-                onSelect={(d) => {
-                  if (d) {
-                    setSelectedDate(d);
-                    setCalendarOpen(false);
-                  }
-                }}
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={isToday ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setSelectedDate(new Date())}
+            >
+              {language === 'th' ? 'วันนี้' : 'Today'}
+            </Button>
+            <Button
+              variant={isYesterday ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setSelectedDate(subDays(new Date(), 1))}
+            >
+              {language === 'th' ? 'เมื่อวาน' : 'Yesterday'}
+            </Button>
+            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    'font-normal border-border/80 hover:bg-muted/50',
+                    !selectedDate && 'text-muted-foreground'
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                  {selectedDate ? dateLabel : 'Pick date'}
+                  <ChevronDown className="h-4 w-4 opacity-50 ml-1 shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={(d) => {
+                    if (d) {
+                      setSelectedDate(d);
+                      setCalendarOpen(false);
+                    }
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
 
         {/* Tabs: ตามเวลา / ตามผู้ใช้ */}

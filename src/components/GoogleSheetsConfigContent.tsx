@@ -40,6 +40,7 @@ import Script from "next/script"
 import { translations } from "./export-feature-translations"
 import { useLanguage } from "@/contexts/LanguageContext"
 import { useConfig } from "@/contexts/AdAccountContext"
+import { openGooglePicker } from "@/lib/google-picker"
 
 export interface ExportConfig {
     id?: string
@@ -202,7 +203,7 @@ export default function GoogleSheetsConfigContent({
         name: '',
         spreadsheetUrl: '',
         spreadsheetName: '',
-        sheetName: 'Sheet1',
+        sheetName: 'ลงสถิตประจำวัน',
         dataType: dataType,
         columnMapping: {},
         autoExportEnabled: false,
@@ -221,7 +222,6 @@ export default function GoogleSheetsConfigContent({
     const [isCalendarOpen, setIsCalendarOpen] = useState(false)
     const [isSavedCalendarOpen, setIsSavedCalendarOpen] = useState<Record<string, boolean>>({})
     const [searchQuery, setSearchQuery] = useState<string>("")
-    const [manualUrl, setManualUrl] = useState<string>("")
     const [managedColumns, setManagedColumns] = useState<string[]>([])
 
     const availableColumns = getAvailableColumns(dataType, lang)
@@ -286,20 +286,56 @@ export default function GoogleSheetsConfigContent({
                 columnMapping: defaultMapping
             }))
 
-            // Initialize managed columns from mapping (continuous sequence)
-            const usedCols = Object.values(defaultMapping).filter(c => c !== 'skip')
-            let maxIndex = -1
-            usedCols.forEach(col => {
-                const idx = sheetColumns.indexOf(col)
-                if (idx > maxIndex) maxIndex = idx
+            // Initialize managed columns from mapping - show all columns that have mappings
+            const usedCols = Object.values(defaultMapping).filter(c => c && c !== 'skip')
+            // Get unique columns and sort them by their index
+            const uniqueCols = Array.from(new Set(usedCols))
+            const sortedCols = uniqueCols.sort((a, b) => {
+                const idxA = sheetColumns.indexOf(a)
+                const idxB = sheetColumns.indexOf(b)
+                return idxA - idxB
             })
-            // Ensure at least some columns if empty (e.g. A-E)
-            if (maxIndex < 4) maxIndex = 4
-
-            setManagedColumns(sheetColumns.slice(0, maxIndex + 1))
+            
+            // If we have mappings, use those columns; otherwise use default range
+            if (sortedCols.length > 0) {
+                console.log('Initializing managedColumns from default mapping:', sortedCols)
+                setManagedColumns(sortedCols)
+            } else {
+                // Ensure at least some columns if empty (e.g. A-E)
+                console.log('No default mapping columns, using default A-E')
+                setManagedColumns(sheetColumns.slice(0, 5))
+            }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dataType, config.includeDate, initialConfig])
+
+    // Sync managedColumns with columnMapping when mapping changes
+    // This ensures all mapped columns are visible in the UI
+    useEffect(() => {
+        const mappedCols = Object.values(config.columnMapping).filter(c => c && c !== 'skip')
+        if (mappedCols.length > 0) {
+            const uniqueMappedCols = Array.from(new Set(mappedCols))
+            
+            // Merge with existing managedColumns to preserve user-added columns
+            const allCols = Array.from(new Set([...managedColumns, ...uniqueMappedCols]))
+            
+            // Sort by column index
+            const sortedCols = allCols.sort((a, b) => {
+                const idxA = sheetColumns.indexOf(a)
+                const idxB = sheetColumns.indexOf(b)
+                return idxA - idxB
+            })
+            
+            // Only update if we have new columns to add
+            const currentColsSet = new Set(managedColumns)
+            const hasNewCols = uniqueMappedCols.some(col => !currentColsSet.has(col))
+            
+            if (hasNewCols || managedColumns.length === 0) {
+                setManagedColumns(sortedCols)
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [config.columnMapping])
 
     const fetchGoogleStatus = async () => {
         try {
@@ -495,7 +531,7 @@ export default function GoogleSheetsConfigContent({
             name: '',
             spreadsheetUrl: '',
             spreadsheetName: '',
-            sheetName: 'Sheet1',
+            sheetName: 'ลงสถิตประจำวัน',
             dataType: dataType,
             columnMapping: defaultMapping,
             autoExportEnabled: false,
@@ -718,26 +754,133 @@ export default function GoogleSheetsConfigContent({
     const [showDriveModal, setShowDriveModal] = useState(false)
     const [driveSearchQuery, setDriveSearchQuery] = useState('')
 
-    const fetchSheetsForId = async (spreadsheetId: string, spreadsheetName: string, spreadsheetUrl: string) => {
+    const fetchSheetsForId = async (spreadsheetId: string, spreadsheetName: string, spreadsheetUrl: string, pickerAccessToken?: string) => {
         setIsFetchingSheets(true)
         setShowDriveModal(false)
+        
+        // Set spreadsheet info immediately so UI shows selection
+        setConfig(prev => ({
+            ...prev,
+            spreadsheetId,
+            spreadsheetUrl,
+            spreadsheetName: spreadsheetName || 'Google Sheets'
+        }))
+        
         try {
+            console.log('Fetching sheets for:', { spreadsheetId, spreadsheetUrl, hasPickerToken: !!pickerAccessToken, pickerTokenLength: pickerAccessToken?.length })
             const res = await fetch('/api/google-sheets/list-sheets', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ spreadsheetId, spreadsheetUrl })
+                body: JSON.stringify({ 
+                    spreadsheetId, 
+                    spreadsheetUrl, 
+                    pickerAccessToken: pickerAccessToken || undefined 
+                })
             })
             const data = await res.json()
+            console.log('List sheets response:', { status: res.status, ok: res.ok, data })
+            
+            if (!res.ok) {
+                const errorMsg = data.error || data.message || (lang === 'th' ? 'ไม่สามารถดึงข้อมูล Sheets ได้' : 'Failed to fetch sheets')
+                console.error('API error:', errorMsg, data)
+                toast.error(errorMsg)
+                setAvailableSheets([])
+                setIsFetchingSheets(false)
+                return
+            }
+            
             if (res.ok) {
-                setAvailableSheets(data.sheets)
+                const sheets = data.sheets || []
+                console.log('Setting available sheets:', { count: sheets.length, sheets })
+                
+                if (!Array.isArray(sheets)) {
+                    console.error('Sheets is not an array:', sheets)
+                    toast.error(lang === 'th' ? 'รูปแบบข้อมูลไม่ถูกต้อง' : 'Invalid data format')
+                    setAvailableSheets([])
+                    setIsFetchingSheets(false)
+                    return
+                }
+                
+                setAvailableSheets(sheets)
+                
+                if (sheets.length === 0) {
+                    console.warn('No sheets found in spreadsheet')
+                    toast.error(lang === 'th' ? 'ไม่พบ Sheets ใน Spreadsheet นี้' : 'No sheets found in this spreadsheet')
+                    setIsFetchingSheets(false)
+                    return
+                }
+                
+                // Try to find "ลงสถิตประจำวัน" first, otherwise use the first sheet
+                const preferredSheet = sheets.find(sheet => sheet.title === 'ลงสถิตประจำวัน')
+                // Use the first available sheet if "ลงสถิตประจำวัน" is not found
+                const selectedSheetName = preferredSheet?.title || sheets[0]?.title || ''
                 setConfig(prev => ({
                     ...prev,
-                    spreadsheetId,
-                    spreadsheetUrl,
                     spreadsheetName: data.spreadsheetName || spreadsheetName || 'Google Sheets',
-                    sheetName: data.sheets[0]?.title || 'Sheet1'
+                    sheetName: selectedSheetName
                 }))
-                toast.success(lang === 'th' ? 'เชื่อมต่อสำเร็จ! กรุณาเลือก Sheet' : 'Connected! Please select a sheet')
+                
+                // Load columns from the first sheet
+                if (spreadsheetId && selectedSheetName) {
+                    try {
+                        const colsRes = await fetch('/api/google-sheets/get-columns', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                spreadsheetId,
+                                sheetName: selectedSheetName
+                            })
+                        })
+                        const colsData = await colsRes.json()
+                        if (colsRes.ok && colsData.columns) {
+                            // Merge API columns with columns from default mapping
+                            const mappedCols = Object.values(config.columnMapping).filter(c => c && c !== 'skip')
+                            const apiCols = colsData.columns || []
+                            const allCols = Array.from(new Set([...apiCols, ...mappedCols]))
+                            const sortedCols = allCols.sort((a, b) => {
+                                const idxA = sheetColumns.indexOf(a)
+                                const idxB = sheetColumns.indexOf(b)
+                                return idxA - idxB
+                            })
+                            console.log('Setting managedColumns from API + mapping:', { apiCols, mappedCols, sortedCols })
+                            setManagedColumns(sortedCols)
+                            toast.success(lang === 'th' ? `เชื่อมต่อสำเร็จ! พบ ${sheets.length} Sheet(s)` : `Connected! Found ${sheets.length} sheet(s)`)
+                        } else {
+                            // Fallback: use columns from default mapping instead of A-E
+                            const mappedCols = Object.values(config.columnMapping).filter(c => c && c !== 'skip')
+                            if (mappedCols.length > 0) {
+                                const uniqueCols = Array.from(new Set(mappedCols))
+                                const sortedCols = uniqueCols.sort((a, b) => {
+                                    const idxA = sheetColumns.indexOf(a)
+                                    const idxB = sheetColumns.indexOf(b)
+                                    return idxA - idxB
+                                })
+                                setManagedColumns(sortedCols)
+                            } else {
+                                setManagedColumns(sheetColumns.slice(0, 5))
+                            }
+                            toast.success(lang === 'th' ? `เชื่อมต่อสำเร็จ! พบ ${sheets.length} Sheet(s)` : `Connected! Found ${sheets.length} sheet(s)`)
+                        }
+                    } catch (e) {
+                        console.error('Failed to load columns:', e)
+                        // Fallback: use columns from default mapping instead of A-E
+                        const mappedCols = Object.values(config.columnMapping).filter(c => c && c !== 'skip')
+                        if (mappedCols.length > 0) {
+                            const uniqueCols = Array.from(new Set(mappedCols))
+                            const sortedCols = uniqueCols.sort((a, b) => {
+                                const idxA = sheetColumns.indexOf(a)
+                                const idxB = sheetColumns.indexOf(b)
+                                return idxA - idxB
+                            })
+                            setManagedColumns(sortedCols)
+                        } else {
+                            setManagedColumns(sheetColumns.slice(0, 5))
+                        }
+                        toast.success(lang === 'th' ? `เชื่อมต่อสำเร็จ! พบ ${sheets.length} Sheet(s)` : `Connected! Found ${sheets.length} sheet(s)`)
+                    }
+                } else {
+                    toast.success(lang === 'th' ? `เชื่อมต่อสำเร็จ! พบ ${sheets.length} Sheet(s)` : `Connected! Found ${sheets.length} sheet(s)`)
+                }
             } else throw new Error(data.error)
         } catch (error: any) {
             toast.error(error?.message || (lang === 'th' ? 'ไม่สามารถเชื่อมต่อได้' : 'Failed to connect'))
@@ -749,17 +892,29 @@ export default function GoogleSheetsConfigContent({
     const handleSelectFromDrive = async () => {
         setIsFetchingSheets(true)
         try {
-            const res = await fetch('/api/google-sheets/list-spreadsheets')
-            const data = await res.json()
-            if (res.ok) {
-                setDriveSpreadsheets(data.spreadsheets || [])
-                setShowDriveModal(true)
+            // Use Google Picker instead of listing spreadsheets for better permission handling
+            console.log('Fetching picker token...')
+            const tokenRes = await fetch('/api/google-sheets/picker-token')
+            const tokenData = await tokenRes.json()
+            if (!tokenRes.ok || !tokenData.accessToken) {
+                toast.error(tokenData.error || (lang === 'th' ? 'ไม่สามารถเชื่อมต่อ Google ได้' : 'Cannot connect to Google'))
+                setIsFetchingSheets(false)
+                return
+            }
+            console.log('Opening Google Picker...', { hasToken: !!tokenData.accessToken, hasApiKey: !!tokenData.apiKey })
+            const result = await openGooglePicker(tokenData.accessToken, tokenData.apiKey)
+            console.log('Picker result:', result)
+            if (result) {
+                console.log('Fetching sheets for:', result.id)
+                // Use the access token from Picker session to access the file
+                await fetchSheetsForId(result.id, result.name, result.url, tokenData.accessToken)
             } else {
-                toast.error(data.error || (lang === 'th' ? 'ไม่สามารถดึงรายการ Sheets ได้' : 'Failed to fetch spreadsheets'))
+                toast.info(lang === 'th' ? 'ไม่ได้เลือกไฟล์ กรุณาลองอีกครั้ง' : 'No file selected. Please try again.')
+                setIsFetchingSheets(false)
             }
         } catch (error: any) {
+            console.error('Error in picker:', error)
             toast.error(error?.message || (lang === 'th' ? 'เกิดข้อผิดพลาด' : 'An error occurred'))
-        } finally {
             setIsFetchingSheets(false)
         }
     }
@@ -1142,57 +1297,177 @@ export default function GoogleSheetsConfigContent({
                                         </Button>
                                     </div>
                                 ) : (
-                                    <div className="space-y-2">
-                                        <div className="flex gap-2">
-                                            <Input
-                                                placeholder="https://docs.google.com/spreadsheets/d/..."
-                                                value={manualUrl}
-                                                onChange={(e) => setManualUrl(e.target.value)}
-                                                className="flex-1"
-                                            />
-                                            <Button
-                                                variant="default"
-                                                onClick={() => {
-                                                    const match = manualUrl.match(/\/d\/([a-zA-Z0-9-_]+)/)
-                                                    if (match && match[1]) {
-                                                        fetchSheetsForId(match[1], 'Google Sheets', manualUrl)
-                                                        setManualUrl('')
-                                                    } else {
-                                                        toast.error(lang === 'th' ? 'URL ไม่ถูกต้อง กรุณาใช้ URL ของ Google Sheets' : 'Invalid URL. Please use a Google Sheets URL.')
+                                    <div className="space-y-3">
+                                        <Button
+                                            variant="default"
+                                            className="w-full sm:w-auto"
+                                            onClick={async () => {
+                                                if (isFetchingSheets) return
+                                                setIsFetchingSheets(true)
+                                                try {
+                                                    console.log('Fetching picker token...')
+                                                    const tokenRes = await fetch('/api/google-sheets/picker-token')
+                                                    const tokenData = await tokenRes.json()
+                                                    if (!tokenRes.ok || !tokenData.accessToken) {
+                                                        toast.error(tokenData.error || (lang === 'th' ? 'ไม่สามารถเชื่อมต่อ Google ได้' : 'Cannot connect to Google'))
+                                                        setIsFetchingSheets(false)
+                                                        return
                                                     }
-                                                }}
-                                                disabled={!manualUrl || isFetchingSheets}
-                                            >
-                                                {isFetchingSheets ? <Loader2 className="h-4 w-4 animate-spin" /> : (lang === 'th' ? 'เชื่อมต่อ' : 'Connect')}
-                                            </Button>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground">
-                                            {lang === 'th' ? '1. เปิด Google Sheets ในแท็บใหม่ 2. Copy URL จาก address bar 3. วางที่นี่แล้วกด เชื่อมต่อ' : '1. Open your Google Sheet in a new tab 2. Copy URL from address bar 3. Paste here and click Connect'}
-                                        </p>
+                                                    console.log('Opening Google Picker...', { hasToken: !!tokenData.accessToken, hasApiKey: !!tokenData.apiKey, hasAppId: !!tokenData.appId })
+                                                    const result = await openGooglePicker(tokenData.accessToken, tokenData.apiKey, tokenData.appId)
+                                                    console.log('Picker result:', result)
+                                                    if (result) {
+                                                        console.log('Fetching sheets for:', {
+                                                            id: result.id,
+                                                            name: result.name,
+                                                            url: result.url,
+                                                            hasPickerToken: !!tokenData.accessToken,
+                                                            tokenLength: tokenData.accessToken?.length
+                                                        })
+                                                        // Use the access token from Picker session to access the file
+                                                        // This token has permission to access the file selected via Picker
+                                                        await fetchSheetsForId(result.id, result.name, result.url, tokenData.accessToken)
+                                                    } else {
+                                                        toast.info(lang === 'th' ? 'ไม่ได้เลือกไฟล์ กรุณาลองอีกครั้ง' : 'No file selected. Please try again.')
+                                                        setIsFetchingSheets(false)
+                                                    }
+                                                } catch (e: any) {
+                                                    console.error('Error in picker:', e)
+                                                    toast.error(e?.message || (lang === 'th' ? 'เกิดข้อผิดพลาด' : 'An error occurred'))
+                                                    setIsFetchingSheets(false)
+                                                }
+                                            }}
+                                            disabled={isFetchingSheets}
+                                        >
+                                            {isFetchingSheets ? <Loader2 className="h-4 w-4 animate-spin" /> : (lang === 'th' ? 'เลือกจาก Google Drive (แนะนำ)' : 'Select from Google Drive (recommended)')}
+                                        </Button>
                                     </div>
                                 )}
                             </div>
 
-                            {availableSheets.length > 0 && (
+                            {config.spreadsheetId && (
                                 <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                                    <div className="space-y-2">
-                                        <Label>{t.sheet_tab_name}</Label>
-                                        <Select
-                                            value={config.sheetName}
-                                            onValueChange={val => setConfig({ ...config, sheetName: val })}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue placeholder={t.sheet_tab_placeholder} />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {availableSheets.map(sheet => (
-                                                    <SelectItem key={sheet.sheetId} value={sheet.title}>
-                                                        {sheet.title}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
+                                    {(() => {
+                                        console.log('Rendering sheet selector:', {
+                                            isFetchingSheets,
+                                            availableSheetsCount: availableSheets.length,
+                                            availableSheets,
+                                            spreadsheetId: config.spreadsheetId,
+                                            currentSheetName: config.sheetName
+                                        })
+                                        return null
+                                    })()}
+                                    {isFetchingSheets ? (
+                                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            <span>{lang === 'th' ? 'กำลังโหลด Sheets...' : 'Loading sheets...'}</span>
+                                        </div>
+                                    ) : availableSheets.length > 0 ? (
+                                        <div className="space-y-2">
+                                            <Label>{t.sheet_tab_name}</Label>
+                                            <Select
+                                                value={config.sheetName || undefined}
+                                                onValueChange={async (val) => {
+                                                    console.log('Sheet selected:', val, 'from available sheets:', availableSheets)
+                                                    setConfig(prev => ({ ...prev, sheetName: val }))
+                                                    // Load columns from the selected sheet
+                                                    if (config.spreadsheetId && val) {
+                                                        setIsFetchingSheets(true)
+                                                        try {
+                                                            const res = await fetch('/api/google-sheets/get-columns', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({
+                                                                    spreadsheetId: config.spreadsheetId,
+                                                                    sheetName: val
+                                                                })
+                                                            })
+                                                            const data = await res.json()
+                                                            if (res.ok && data.columns) {
+                                                                // Merge API columns with columns from default mapping
+                                                                const mappedCols = Object.values(config.columnMapping).filter(c => c && c !== 'skip')
+                                                                const apiCols = data.columns || []
+                                                                const allCols = Array.from(new Set([...apiCols, ...mappedCols]))
+                                                                const sortedCols = allCols.sort((a, b) => {
+                                                                    const idxA = sheetColumns.indexOf(a)
+                                                                    const idxB = sheetColumns.indexOf(b)
+                                                                    return idxA - idxB
+                                                                })
+                                                                console.log('Setting managedColumns from API + mapping (sheet select):', { apiCols, mappedCols, sortedCols })
+                                                                setManagedColumns(sortedCols)
+                                                                toast.success(lang === 'th' ? `พบ ${data.columnCount} คอลัมน์` : `Found ${data.columnCount} columns`)
+                                                            } else {
+                                                                // Fallback: use columns from default mapping instead of A-E
+                                                                const mappedCols = Object.values(config.columnMapping).filter(c => c && c !== 'skip')
+                                                                if (mappedCols.length > 0) {
+                                                                    const uniqueCols = Array.from(new Set(mappedCols))
+                                                                    const sortedCols = uniqueCols.sort((a, b) => {
+                                                                        const idxA = sheetColumns.indexOf(a)
+                                                                        const idxB = sheetColumns.indexOf(b)
+                                                                        return idxA - idxB
+                                                                    })
+                                                                    setManagedColumns(sortedCols)
+                                                                } else {
+                                                                    setManagedColumns(sheetColumns.slice(0, 5))
+                                                                }
+                                                            }
+                                                        } catch (error: any) {
+                                                            console.error('Failed to load columns:', error)
+                                                            // Fallback: use columns from default mapping instead of A-E
+                                                            const mappedCols = Object.values(config.columnMapping).filter(c => c && c !== 'skip')
+                                                            if (mappedCols.length > 0) {
+                                                                const uniqueCols = Array.from(new Set(mappedCols))
+                                                                const sortedCols = uniqueCols.sort((a, b) => {
+                                                                    const idxA = sheetColumns.indexOf(a)
+                                                                    const idxB = sheetColumns.indexOf(b)
+                                                                    return idxA - idxB
+                                                                })
+                                                                setManagedColumns(sortedCols)
+                                                            } else {
+                                                                setManagedColumns(sheetColumns.slice(0, 5))
+                                                            }
+                                                        } finally {
+                                                            setIsFetchingSheets(false)
+                                                        }
+                                                    }
+                                                }}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder={t.sheet_tab_placeholder} />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {availableSheets.length === 0 ? (
+                                                        <SelectItem value="no-sheets" disabled>
+                                                            {lang === 'th' ? 'ไม่พบ Sheets' : 'No sheets available'}
+                                                        </SelectItem>
+                                                    ) : (
+                                                        availableSheets.map(sheet => {
+                                                            console.log('Rendering sheet option:', { sheetId: sheet.sheetId, title: sheet.title })
+                                                            return (
+                                                                <SelectItem key={sheet.sheetId} value={sheet.title}>
+                                                                    {sheet.title}
+                                                                </SelectItem>
+                                                            )
+                                                        })
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <Label>{t.sheet_tab_name}</Label>
+                                            <Input
+                                                placeholder={lang === 'th' ? 'พิมพ์ชื่อชีต เช่น ลงสถิตประจำวัน' : 'Type sheet name, e.g. ลงสถิตประจำวัน'}
+                                                value={config.sheetName || ''}
+                                                onChange={(e) => {
+                                                    setConfig(prev => ({ ...prev, sheetName: e.target.value }))
+                                                }}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                {lang === 'th' ? 'ไม่พบ Sheets ใน Spreadsheet นี้ กรุณาพิมพ์ชื่อชีตเอง' : 'No sheets found in this spreadsheet. Please type the sheet name manually.'}
+                                            </p>
+                                        </div>
+                                    )}
 
                                     <div className="pt-4 border-t">
                                         <div className="flex items-center justify-between mb-2">

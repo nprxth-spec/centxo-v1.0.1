@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { adboxDb } from '@/lib/adbox-db';
+import { inboxDb } from '@/lib/inbox-db';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,8 +22,8 @@ export async function GET(req: NextRequest) {
 
     const sinceDate = since ? new Date(since) : new Date(Date.now() - 60000);
 
-    const newMessages = await adboxDb.findNewMessagesForPages(pageIds, sinceDate);
-    const updatedConversations = await adboxDb.findUpdatedConversations(pageIds, sinceDate);
+    const newMessages = await inboxDb.findNewMessagesForPages(pageIds, sinceDate);
+    const updatedConversations = await inboxDb.findUpdatedConversations(pageIds, sinceDate);
 
     return NextResponse.json({
       newMessages: newMessages.map((m) => ({

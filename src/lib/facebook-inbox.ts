@@ -1,13 +1,13 @@
 /**
- * Facebook Graph API for AdBox (Messenger Inbox)
+ * Facebook Graph API for Inbox
  */
 
 const PAGE_TOKEN_CACHE_TTL = 55 * 60 * 1000; // 55 min - reduce gr:get:Page
 declare global {
-  var _adboxPageTokenCache: Record<string, { token: string; ts: number }> | undefined;
+  var _inboxPageTokenCache: Record<string, { token: string; ts: number }> | undefined;
 }
-const pageTokenCache = globalThis._adboxPageTokenCache ?? {};
-if (typeof globalThis !== 'undefined') globalThis._adboxPageTokenCache = pageTokenCache;
+const pageTokenCache = globalThis._inboxPageTokenCache ?? {};
+if (typeof globalThis !== 'undefined') globalThis._inboxPageTokenCache = pageTokenCache;
 
 export async function getPageAccessToken(userAccessToken: string | null, pageId: string): Promise<string> {
   const key = pageId;
@@ -174,9 +174,9 @@ async function enrichConversationsWithAdIdLabels(
             if (match) adId = match[1];
           }
           if (adId) adIdByConvId.set(c.id as string, adId);
-        } catch {}
+        } catch { }
       });
-    } catch {}
+    } catch { }
   }
 
   return conversations.map((c) => {

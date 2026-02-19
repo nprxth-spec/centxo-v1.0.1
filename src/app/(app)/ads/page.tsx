@@ -42,6 +42,9 @@ function TabLoadingState() {
 
 type TabKey = 'accounts' | 'campaigns' | 'export';
 
+// Valid tabs constant - moved outside component to avoid recreation on each render
+const VALID_TABS: TabKey[] = ['accounts', 'campaigns', 'export'];
+
 export default function UnifiedAdsPage() {
   const { t } = useLanguage();
   const searchParams = useSearchParams();
@@ -50,14 +53,14 @@ export default function UnifiedAdsPage() {
 
   // Get tab from URL or default to 'campaigns'
   const tabFromUrl = searchParams.get('tab') || 'campaigns';
-  const validTabs: TabKey[] = ['accounts', 'campaigns', 'export'];
   const [activeTab, setActiveTab] = useState<TabKey>(
-    validTabs.includes(tabFromUrl as TabKey) ? (tabFromUrl as TabKey) : 'campaigns'
+    VALID_TABS.includes(tabFromUrl as TabKey) ? (tabFromUrl as TabKey) : 'campaigns'
   );
 
   // Sync URL when tab changes
   const handleTabChange = (tab: string) => {
     const newTab = tab as TabKey;
+    if (!VALID_TABS.includes(newTab)) return; // Validate tab
     setActiveTab(newTab);
     const params = new URLSearchParams(searchParams?.toString() || '');
     params.set('tab', newTab);
@@ -67,10 +70,10 @@ export default function UnifiedAdsPage() {
   // Sync state when URL changes externally
   useEffect(() => {
     const tabParam = searchParams.get('tab');
-    if (tabParam && validTabs.includes(tabParam as TabKey) && tabParam !== activeTab) {
+    if (tabParam && VALID_TABS.includes(tabParam as TabKey) && tabParam !== activeTab) {
       setActiveTab(tabParam as TabKey);
     }
-  }, [searchParams]);
+  }, [searchParams, activeTab]);
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
