@@ -18,6 +18,10 @@ const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET!;
 const FACEBOOK_REDIRECT_URI = process.env.FACEBOOK_REDIRECT_URI!;
 
 export async function GET(request: NextRequest) {
+  // Declare outside try so catch block can reference them
+  let errorBase = '/settings?tab=team';
+  let successRedirect = '/settings?tab=team&linkSuccess=facebook';
+
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
@@ -43,8 +47,8 @@ export async function GET(request: NextRequest) {
 
     // State format: "email" (legacy) or "email|returnTo"
     const [userEmail, returnTo = 'team'] = state.split('|');
-    const successRedirect = `/settings?tab=${returnTo}&linkSuccess=facebook`;
-    const errorBase = `/settings?tab=${returnTo}`;
+    successRedirect = `/settings?tab=${returnTo}&linkSuccess=facebook`;
+    errorBase = `/settings?tab=${returnTo}`;
 
     // Validate required environment variables
     if (!FACEBOOK_APP_ID || !FACEBOOK_APP_SECRET || !FACEBOOK_REDIRECT_URI) {
