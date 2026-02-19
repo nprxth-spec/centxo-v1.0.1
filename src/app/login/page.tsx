@@ -22,6 +22,13 @@ const GoogleIcon = () => (
     </svg>
 );
 
+const FacebookIcon = () => (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none">
+        <rect width="24" height="24" rx="12" fill="#1877F2" />
+        <path d="M16.5 12H14v-1.5c0-.6.4-.75.75-.75H16.5V7.5h-2.25C12.1 7.5 11 8.68 11 10.5V12H9v2.25h2V22h3v-7.75h2l.5-2.25z" fill="white" />
+    </svg>
+);
+
 
 
 function LoginPageContent() {
@@ -73,6 +80,11 @@ function LoginPageContent() {
         await signIn('google', { callbackUrl: "/dashboard" });
     };
 
+    const handleFacebookSignIn = async () => {
+        setLoading('facebook');
+        await signIn('facebook', { callbackUrl: "/dashboard" });
+    };
+
 
 
     return (
@@ -111,6 +123,23 @@ function LoginPageContent() {
                             <>
                                 <GoogleIcon />
                                 {t('login.google')}
+                            </>
+                        )}
+                    </Button>
+
+                    {/* Continue with Facebook */}
+                    <Button
+                        variant="outline"
+                        disabled={loading !== null}
+                        onClick={handleFacebookSignIn}
+                        className="w-full h-11 rounded-lg font-medium border bg-muted hover:bg-muted/80 justify-center gap-3"
+                    >
+                        {loading === 'facebook' ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                            <>
+                                <FacebookIcon />
+                                {t('login.facebook', 'Continue with Facebook')}
                             </>
                         )}
                     </Button>

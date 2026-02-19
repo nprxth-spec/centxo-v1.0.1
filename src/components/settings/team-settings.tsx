@@ -143,11 +143,13 @@ export function TeamSettings() {
     const [isReconnecting, setIsReconnecting] = useState(false);
     const [checkingMetaConnection, setCheckingMetaConnection] = useState(false);
 
-    // Separate members by type and filter by search term
+    // Team Members section shows only email/Google members — Facebook-connected accounts
+    // appear exclusively in the "Facebook Accounts" section above.
     const allMembers = teamData?.members || [];
-    const filteredMembers = allMembers.filter(member => {
-        const name = (member.memberName || member.facebookName || '').toLowerCase();
-        const email = (member.memberEmail || member.facebookEmail || '').toLowerCase();
+    const emailMembers = allMembers.filter(m => m.memberType === 'email');
+    const filteredMembers = emailMembers.filter(member => {
+        const name = (member.memberName || '').toLowerCase();
+        const email = (member.memberEmail || '').toLowerCase();
         const search = searchTerm.toLowerCase();
         return name.includes(search) || email.includes(search);
     });
@@ -162,7 +164,7 @@ export function TeamSettings() {
         const metaSuccess = searchParams.get('metaSuccess');
         const metaError = searchParams.get('metaError');
 
-        if (metaSuccess === 'true') {
+        if (metaSuccess === 'true' || searchParams.get('linkSuccess') === 'facebook') {
             toast({
                 title: "Success",
                 description: "Meta account connected successfully!",
@@ -257,7 +259,7 @@ export function TeamSettings() {
     };
 
     const memberLimit = planLimits.teamMembers;
-    const atMemberLimit = (teamData?.members?.length ?? 0) >= memberLimit;
+    const atMemberLimit = emailMembers.length >= memberLimit;
 
     const handleAddMember = async () => {
         if (atMemberLimit) return;
@@ -454,7 +456,14 @@ export function TeamSettings() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    (teamData?.facebookConnections ?? []).map((row) => (
+                                    (teamData?.facebookConnections ?? []).map((row) => {
+                                        // Find the email member this Facebook account belongs to
+                                        const linkedMemberEmail = row.role === 'OWNER'
+                                            ? teamData?.host?.email
+                                            : emailMembers.find(m => m.id === row.id.replace(/^email-/, '') || m.linkedFacebook?.email === row.email)?.memberEmail;
+                                        // Don't show FB email if it's identical to the linked member's login email
+                                        const showFbEmail = row.email && row.email.toLowerCase() !== linkedMemberEmail?.toLowerCase();
+                                        return (
                                         <tr key={row.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
@@ -466,7 +475,7 @@ export function TeamSettings() {
                                                     </Avatar>
                                                     <div className="min-w-0">
                                                         <div className="font-medium text-foreground">{row.name}</div>
-                                                        {row.email ? <div className="text-sm text-muted-foreground truncate">{row.email}</div> : null}
+                                                        {showFbEmail ? <div className="text-sm text-muted-foreground truncate">{row.email}</div> : null}
                                                     </div>
                                                 </div>
                                             </td>
@@ -492,7 +501,8 @@ export function TeamSettings() {
                                                 )}
                                             </td>
                                         </tr>
-                                    ))
+                                        );
+                                    })
                                 )}
                             </tbody>
                         </table>
@@ -557,6 +567,8 @@ export function TeamSettings() {
                                         </td>
                                         {(() => {
                                             const ownerFb = (teamData?.facebookConnections ?? []).find(fc => fc.role === 'OWNER');
+                                            // Don't repeat the email if it's the same as the Google/login email
+                                            const fbEmailDifferent = ownerFb?.email && ownerFb.email.toLowerCase() !== teamData?.host?.email?.toLowerCase();
                                             return (
                                                 <td className="px-6 py-4">
                                                     {ownerFb?.name ? (
@@ -564,7 +576,7 @@ export function TeamSettings() {
                                                             <Facebook className="h-4 w-4 text-blue-500 shrink-0" />
                                                             <div className="min-w-0">
                                                                 <div className="text-sm font-medium text-foreground truncate">{ownerFb.name}</div>
-                                                                {ownerFb.email && <div className="text-xs text-muted-foreground truncate">{ownerFb.email}</div>}
+                                                                {fbEmailDifferent && <div className="text-xs text-muted-foreground truncate">{ownerFb.email}</div>}
                                                             </div>
                                                         </div>
                                                     ) : (
@@ -629,7 +641,11 @@ export function TeamSettings() {
                                                         <Facebook className="h-4 w-4 text-blue-500 shrink-0" />
                                                         <div className="min-w-0">
                                                             <div className="text-sm font-medium text-foreground truncate">{member.linkedFacebook.name}</div>
-                                                            {member.linkedFacebook.email && <div className="text-xs text-muted-foreground truncate">{member.linkedFacebook.email}</div>}
+                                                            {/* Only show Facebook email if it's different from the member's Google/login email */}
+                                                            {member.linkedFacebook.email &&
+                                                                member.linkedFacebook.email.toLowerCase() !== member.memberEmail?.toLowerCase() && (
+                                                                <div className="text-xs text-muted-foreground truncate">{member.linkedFacebook.email}</div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 ) : (

@@ -41,6 +41,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // State format: "email" (legacy) or "email|returnTo"
+    const [userEmail, returnTo = 'team'] = state.split('|');
+    const successRedirect = `/settings?tab=${returnTo}&linkSuccess=facebook`;
+    const errorBase = `/settings?tab=${returnTo}`;
+
     // Validate required environment variables
     if (!FACEBOOK_APP_ID || !FACEBOOK_APP_SECRET || !FACEBOOK_REDIRECT_URI) {
       console.error('[meta/callback] Missing environment variables:', {
@@ -81,12 +86,12 @@ export async function GET(request: NextRequest) {
 
     // Find user by email (from state)
     const user = await prisma.user.findUnique({
-      where: { email: state },
+      where: { email: userEmail },
     });
 
     if (!user) {
       return NextResponse.redirect(
-        new URL('/settings?tab=team&metaError=user_not_found', request.url)
+        new URL(`${errorBase}&metaError=user_not_found`, request.url)
       );
     }
 
@@ -151,9 +156,9 @@ export async function GET(request: NextRequest) {
       userAgent,
     });
 
-    // Redirect to Account Settings > Team & Connection tab
+    // Redirect to the appropriate settings tab
     return NextResponse.redirect(
-      new URL('/settings?tab=team&metaSuccess=true', request.url)
+      new URL(successRedirect, request.url)
     );
   } catch (error: any) {
     console.error('[meta/callback] Error:', error);
@@ -163,7 +168,7 @@ export async function GET(request: NextRequest) {
       stack: error?.stack,
     });
     return NextResponse.redirect(
-      new URL(`/settings?tab=team&metaError=callback_failed&error_msg=${encodeURIComponent(errorMessage)}`, request.url)
+      new URL(`${errorBase}&metaError=callback_failed&error_msg=${encodeURIComponent(errorMessage)}`, request.url)
     );
   }
 }

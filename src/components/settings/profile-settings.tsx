@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Camera, Trash2, Loader2 } from 'lucide-react';
+import { Camera, Trash2, Loader2, CheckCircle2, Link2, Unlink } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -21,10 +22,28 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+const GoogleIcon = () => (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+    </svg>
+);
+
+const FacebookIcon = () => (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none">
+        <rect width="24" height="24" rx="12" fill="#1877F2" />
+        <path d="M16.5 12H14v-1.5c0-.6.4-.75.75-.75H16.5V7.5h-2.25C12.1 7.5 11 8.68 11 10.5V12H9v2.25h2V22h3v-7.75h2l.5-2.25z" fill="white" />
+    </svg>
+);
+
 export function ProfileSettings() {
     const { t } = useLanguage();
     const { data: session, update } = useSession();
     const { toast } = useToast();
+    const searchParams = useSearchParams();
+    const router = useRouter();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const lastSavedNameRef = useRef<string>('');
 
@@ -49,6 +68,79 @@ export function ProfileSettings() {
     const [isChangingPassword, setIsChangingPassword] = useState(false);
     const [showPasswordSection, setShowPasswordSection] = useState(false);
     const [hasPassword, setHasPassword] = useState<boolean | null>(null);
+
+    // Connected accounts state
+    const [connectedAccounts, setConnectedAccounts] = useState<{ provider: string; email: string }[]>([]);
+    const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
+    const [disconnectingProvider, setDisconnectingProvider] = useState<string | null>(null);
+    const [confirmDisconnectProvider, setConfirmDisconnectProvider] = useState<string | null>(null);
+
+    // Fetch connected OAuth providers
+    const fetchConnectedAccounts = async () => {
+        setIsLoadingAccounts(true);
+        try {
+            const res = await fetch('/api/user/connected-accounts');
+            if (res.ok) {
+                const data = await res.json();
+                setConnectedAccounts(data.accounts || []);
+            }
+        } catch {
+            // silent
+        } finally {
+            setIsLoadingAccounts(false);
+        }
+    };
+
+    // Handle link success/error from Google/Facebook OAuth callback
+    useEffect(() => {
+        const linkSuccess = searchParams.get('linkSuccess');
+        const linkError = searchParams.get('linkError');
+        if (linkSuccess) {
+            const providerLabel = linkSuccess === 'google' ? 'Google' : 'Facebook';
+            toast({ title: 'Account linked', description: `${providerLabel} account connected successfully.` });
+            fetchConnectedAccounts();
+            router.replace('/settings?tab=profile');
+        } else if (linkError) {
+            const messages: Record<string, string> = {
+                google_denied: 'Google sign-in was cancelled.',
+                google_token: 'Failed to get Google token. Please try again.',
+                google_profile: 'Failed to fetch Google profile. Please try again.',
+                google_already_linked_to_other: 'This Google account is already linked to another user.',
+                user_not_found: 'User session not found. Please log in again.',
+                google_error: 'An unexpected error occurred. Please try again.',
+            };
+            toast({
+                title: 'Link failed',
+                description: messages[linkError] || 'Failed to connect account.',
+                variant: 'destructive',
+            });
+            router.replace('/settings?tab=profile');
+        }
+    }, [searchParams]);
+
+    // Disconnect a provider
+    const handleDisconnect = async (provider: string) => {
+        setDisconnectingProvider(provider);
+        try {
+            const res = await fetch('/api/user/disconnect-account', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                toast({ title: 'Account disconnected', description: `${provider.charAt(0).toUpperCase() + provider.slice(1)} account removed.` });
+                fetchConnectedAccounts();
+            } else {
+                toast({ title: 'Error', description: data.error || 'Failed to disconnect.', variant: 'destructive' });
+            }
+        } catch {
+            toast({ title: 'Error', description: 'Network error.', variant: 'destructive' });
+        } finally {
+            setDisconnectingProvider(null);
+            setConfirmDisconnectProvider(null);
+        }
+    };
 
     useEffect(() => {
         if (session?.user) {
@@ -101,6 +193,7 @@ export function ProfileSettings() {
                 }
             };
             checkPassword();
+            fetchConnectedAccounts();
         }
     }, [session]);
 
@@ -561,6 +654,122 @@ export function ProfileSettings() {
                         </div>
                     </div>
 
+                    {/* Connected Accounts Section */}
+                    <div className="grid gap-4 p-4 md:p-6 border border-border/60 rounded-lg bg-card/40 shadow-sm mt-6">
+                        <div>
+                            <h3 className="text-base md:text-lg font-semibold">Connected Accounts</h3>
+                            <p className="text-xs md:text-sm text-muted-foreground">
+                                Link multiple login methods to your account
+                            </p>
+                        </div>
+
+                        {isLoadingAccounts ? (
+                            <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                                <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {/* Google row */}
+                                {(() => {
+                                    const googleAcc = connectedAccounts.find(a => a.provider === 'google');
+                                    const canDisconnect = connectedAccounts.length > 1;
+                                    return (
+                                        <div className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border/50 bg-background/50">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <GoogleIcon />
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-medium">Google</div>
+                                                    {googleAcc ? (
+                                                        <div className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                                                            <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                                                            Connected
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-xs text-muted-foreground">Not connected</div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {googleAcc ? (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={!canDisconnect || disconnectingProvider === 'google'}
+                                                    title={!canDisconnect ? 'Cannot disconnect your only login method' : ''}
+                                                    onClick={() => setConfirmDisconnectProvider('google')}
+                                                    className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60 shrink-0"
+                                                >
+                                                    {disconnectingProvider === 'google' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unlink className="h-4 w-4" />}
+                                                    <span className="ml-1 hidden sm:inline">Disconnect</span>
+                                                </Button>
+                                            ) : (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => { window.location.href = '/api/auth/link/google'; }}
+                                                    className="shrink-0"
+                                                >
+                                                    <Link2 className="h-4 w-4" />
+                                                    <span className="ml-1 hidden sm:inline">Connect</span>
+                                                </Button>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Facebook row */}
+                                {(() => {
+                                    const fbAcc = connectedAccounts.find(a => a.provider === 'facebook');
+                                    const canDisconnect = connectedAccounts.length > 1;
+                                    return (
+                                        <div className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border/50 bg-background/50">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <FacebookIcon />
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-medium">Facebook</div>
+                                                    {fbAcc ? (
+                                                        <div className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                                                            <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                                                            Connected
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-xs text-muted-foreground">Not connected</div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {fbAcc ? (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={!canDisconnect || disconnectingProvider === 'facebook'}
+                                                    title={!canDisconnect ? 'Cannot disconnect your only login method' : ''}
+                                                    onClick={() => setConfirmDisconnectProvider('facebook')}
+                                                    className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/60 shrink-0"
+                                                >
+                                                    {disconnectingProvider === 'facebook' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unlink className="h-4 w-4" />}
+                                                    <span className="ml-1 hidden sm:inline">Disconnect</span>
+                                                </Button>
+                                            ) : (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={async () => {
+                                                        const res = await fetch('/api/meta/connect?returnTo=profile');
+                                                        const data = await res.json();
+                                                        if (data.authUrl) window.location.href = data.authUrl;
+                                                    }}
+                                                    className="shrink-0"
+                                                >
+                                                    <Link2 className="h-4 w-4" />
+                                                    <span className="ml-1 hidden sm:inline">Connect</span>
+                                                </Button>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
+                    </div>
+
                     {/* Password Change Section */}
                     <div className="grid gap-6 p-4 md:p-6 border border-border/60 rounded-lg bg-card/40 shadow-sm mt-6">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -671,6 +880,28 @@ export function ProfileSettings() {
                     </div>
                 </div>
             </div>
+
+            {/* Disconnect Account Confirmation Dialog */}
+            <AlertDialog open={!!confirmDisconnectProvider} onOpenChange={(open) => !open && setConfirmDisconnectProvider(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Disconnect {confirmDisconnectProvider === 'google' ? 'Google' : 'Facebook'} account?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            You will no longer be able to sign in with {confirmDisconnectProvider === 'google' ? 'Google' : 'Facebook'}.
+                            Make sure you have another way to log in before disconnecting.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={() => confirmDisconnectProvider && handleDisconnect(confirmDisconnectProvider)}
+                            className="bg-destructive hover:bg-destructive/90"
+                        >
+                            Disconnect
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             {/* Remove Photo Confirmation Dialog */}
             <AlertDialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>

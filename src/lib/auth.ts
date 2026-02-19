@@ -200,6 +200,105 @@ export const authOptions: NextAuthOptions = {
 
     callbacks: {
         async signIn({ user, account, profile }) {
+            // ─── Auto-link OAuth accounts across providers (same email) ───
+            // Handles all cases:
+            //   - credentials user → then signs in with Google/Facebook
+            //   - Facebook user (email X) → then signs in with Google (same email X)
+            //   - Google user (email X) → then signs in with Facebook (same email X)
+            // We look up the OLDEST user with this email and make that the canonical
+            // account, attaching the new provider's Account record to it.
+            if (account && (account.provider === 'google' || account.provider === 'facebook') && user?.email) {
+                try {
+                    // Find any existing user with this email who does NOT yet have
+                    // an Account record for this provider.
+                    const existingUser = await prisma.user.findUnique({
+                        where: { email: user.email },
+                        include: {
+                            accounts: true, // fetch all providers to detect duplicates
+                        },
+                    });
+
+                    if (existingUser && existingUser.id !== user.id) {
+                        // A different user record already owns this email.
+                        // Check if the current provider is already linked.
+                        const alreadyLinked = existingUser.accounts.some(
+                            a => a.provider === account.provider && a.providerAccountId === account.providerAccountId
+                        );
+
+                        if (!alreadyLinked) {
+                            // Link this provider's Account to the existing user
+                            await prisma.account.create({
+                                data: {
+                                    userId: existingUser.id,
+                                    type: account.type,
+                                    provider: account.provider,
+                                    providerAccountId: account.providerAccountId,
+                                    access_token: account.access_token,
+                                    refresh_token: account.refresh_token ?? null,
+                                    expires_at: account.expires_at ?? null,
+                                    token_type: account.token_type ?? null,
+                                    scope: account.scope ?? null,
+                                    id_token: account.id_token ?? null,
+                                    session_state: account.session_state ? String(account.session_state) : null,
+                                },
+                            });
+
+                            // Remove the newly created duplicate user (if NextAuth created one
+                            // before this callback ran). Only safe to delete if it has no
+                            // other linked accounts or data.
+                            if (user.id && user.id !== existingUser.id) {
+                                try {
+                                    const newUser = await prisma.user.findUnique({
+                                        where: { id: user.id },
+                                        include: { accounts: true },
+                                    });
+                                    // Only delete the orphan user if it was just created (no other accounts)
+                                    if (newUser && newUser.accounts.length <= 1) {
+                                        await prisma.account.deleteMany({ where: { userId: user.id } });
+                                        await prisma.user.delete({ where: { id: user.id } });
+                                    }
+                                } catch {
+                                    // Ignore — the user row might not exist yet (callback ran before adapter)
+                                }
+                            }
+
+                            console.log(`✅ Linked ${account.provider} account to existing user:`, user.email);
+                        }
+
+                        // Always redirect to the canonical (existing) user
+                        user.id = existingUser.id;
+                        user.name = existingUser.name ?? user.name;
+                        user.image = existingUser.image ?? user.image;
+                    } else if (existingUser && existingUser.id === user.id) {
+                        // Same user — ensure the Account record exists for this provider
+                        const alreadyLinked = existingUser.accounts.some(
+                            a => a.provider === account.provider && a.providerAccountId === account.providerAccountId
+                        );
+                        if (!alreadyLinked) {
+                            await prisma.account.create({
+                                data: {
+                                    userId: existingUser.id,
+                                    type: account.type,
+                                    provider: account.provider,
+                                    providerAccountId: account.providerAccountId,
+                                    access_token: account.access_token,
+                                    refresh_token: account.refresh_token ?? null,
+                                    expires_at: account.expires_at ?? null,
+                                    token_type: account.token_type ?? null,
+                                    scope: account.scope ?? null,
+                                    id_token: account.id_token ?? null,
+                                    session_state: account.session_state ? String(account.session_state) : null,
+                                },
+                            });
+                            console.log(`✅ Added ${account.provider} account to user:`, user.email);
+                        }
+                    }
+                } catch (linkError) {
+                    console.error(`Failed to auto-link ${account.provider} account:`, linkError);
+                    // Don't block sign-in — let NextAuth handle it
+                }
+            }
+
             // Auto-create MetaAccount + TeamMember when user signs in with Facebook
             if (account?.provider === 'facebook' && account?.access_token && user?.id && account.providerAccountId) {
                 try {

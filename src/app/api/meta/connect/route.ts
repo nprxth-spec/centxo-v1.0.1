@@ -61,9 +61,15 @@ export async function GET(request: NextRequest) {
       'business_management',
     ].join(',');
 
+    // Allow callers to specify where to redirect after the OAuth callback
+    // (e.g. ?returnTo=profile when linking from Profile Settings)
+    const returnTo = new URL(request.url).searchParams.get('returnTo') || 'team';
+    // Encode as "email|returnTo" so the callback can split on "|"
+    const stateValue = `${session.user.email || ''}|${returnTo}`;
+
     const authUrl = `https://www.facebook.com/v22.0/dialog/oauth?client_id=${FACEBOOK_APP_ID}&redirect_uri=${encodeURIComponent(
       FACEBOOK_REDIRECT_URI
-    )}&scope=${encodeURIComponent(scope)}&response_type=code&state=${encodeURIComponent(session.user.email || '')}&auth_type=reauthorize`;
+    )}&scope=${encodeURIComponent(scope)}&response_type=code&state=${encodeURIComponent(stateValue)}&auth_type=reauthorize`;
 
     console.log('[meta/connect] Generated auth URL for user:', session.user.email);
     return NextResponse.json({ authUrl });
